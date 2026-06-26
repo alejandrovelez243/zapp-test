@@ -10,9 +10,13 @@
 
 FROM node:22-bookworm-slim
 
-# corepack ships with Node and provisions the pnpm version pinned by the
-# "packageManager" field in package.json — no global `npm i -g pnpm` needed.
-RUN corepack enable
+# corepack ships with Node 22 and manages pnpm without a global install.
+# Pin pnpm@9 (major) to match CI (`corepack prepare pnpm@9 --activate` in
+# ci.yml) and to match the lockfileVersion 9.0 in pnpm-lock.yaml.
+# IMPORTANT: without an explicit version pin, corepack downloads pnpm 11+,
+# which no longer reads the `pnpm.onlyBuiltDependencies` field in package.json
+# and exits 1 with ERR_PNPM_IGNORED_BUILDS for sharp + unrs-resolver.
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /app
 
@@ -20,13 +24,12 @@ WORKDIR /app
 # Copy manifests first so this layer is cached on manifest changes and survives
 # source edits.
 #
-# pnpm-workspace.yaml MUST be copied alongside package.json + pnpm-lock.yaml:
-#   - pnpm 11 hard-errors (ERR_PNPM_IGNORED_BUILDS) on un-approved build scripts
-#     in non-interactive mode. The workspace file carries `onlyBuiltDependencies`
-#     (sharp, unrs-resolver). Without it pnpm never sees the approval and exits 1.
-#   - `"pnpm": {"onlyBuiltDependencies": [...]}` in package.json is the
-#     belt-and-suspenders guarantee regardless of workspace resolution order.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm 9 reads `"pnpm": {"onlyBuiltDependencies": [...]}` from package.json to
+# approve build scripts for sharp + unrs-resolver (ERR_PNPM_IGNORED_BUILDS
+# guard). No pnpm-workspace.yaml is needed — this is a single-package repo and
+# a workspace file without a `packages:` field causes pnpm to abort in workspace
+# mode, which is why the stray frontend/pnpm-workspace.yaml was deleted.
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # --- Application layer + production build -------------------------------------

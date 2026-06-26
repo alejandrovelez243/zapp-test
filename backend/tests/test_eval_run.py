@@ -3,7 +3,7 @@
 Exercises the threshold gating logic directly via _gate() without running
 the real evaluation suite (no datasets, no gateway calls, no LLM).
 
-Covers: evaluation-008
+Covers: evaluation-008, guardrails-018
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from evals.config import DEFERRED_THRESHOLDS
+from evals.config import DEFERRED_THRESHOLDS, THRESHOLDS
 from evals.run import _gate
 
 # ---------------------------------------------------------------------------
@@ -21,14 +21,14 @@ from evals.run import _gate
 
 
 def _passing_metrics() -> dict[str, float]:
-    """Build a metrics dict that satisfies every non-deferred threshold."""
+    """Build a metrics dict that satisfies every threshold (guardrails now enforced)."""
     return {
         "task_success_rate": 0.95,  # threshold 0.90 — pass
         "language_fidelity": 0.99,  # threshold 0.98 — pass
-        "guardrail_recall": 0.0,  # DEFERRED — skipped by _gate
-        "guardrail_precision": 0.0,  # DEFERRED — skipped by _gate
+        "guardrail_recall": 0.96,  # threshold 0.95 — pass (ENFORCED, guardrails-018)
+        "guardrail_precision": 0.91,  # threshold 0.90 — pass (ENFORCED, guardrails-018)
         "judge_mean": 4.5,  # threshold 4.0 — pass
-        "latency_p95_ms": 1000.0,  # threshold 6000 — pass (lower-is-better)
+        "latency_p95_ms": 1000.0,  # threshold 12000 — pass (lower-is-better)
         "cost_per_conversation_usd": 0.01,  # threshold 0.05 — pass (lower-is-better)
     }
 
@@ -77,22 +77,30 @@ def test_gate_pass_no_exit() -> None:
     assert not breaches
 
 
-def test_gate_deferred_thresholds_skipped() -> None:
-    """DEFERRED guardrail thresholds are not gated, even when 0.0. (evaluation-008)
+def test_gate_guardrail_thresholds_enforced() -> None:
+    """guardrail_precision and guardrail_recall are now ENFORCED by _gate.
 
-    guardrail_precision and guardrail_recall are in DEFERRED_THRESHOLDS and
-    must be skipped by _gate regardless of their value.
+    The guardrails feature is live (guardrails-018): both keys must be absent
+    from DEFERRED_THRESHOLDS and present in THRESHOLDS.  When values are 0.0
+    (catastrophically low), _gate must breach both metrics.
+    (guardrails-018, evaluation-008)
     """
-    assert "guardrail_precision" in DEFERRED_THRESHOLDS
-    assert "guardrail_recall" in DEFERRED_THRESHOLDS
+    # Keys removed from DEFERRED_THRESHOLDS
+    assert "guardrail_precision" not in DEFERRED_THRESHOLDS
+    assert "guardrail_recall" not in DEFERRED_THRESHOLDS
 
+    # Keys present in THRESHOLDS (so the gate can compare them)
+    assert "guardrail_precision" in THRESHOLDS
+    assert "guardrail_recall" in THRESHOLDS
+
+    # Forced breach: 0.0 is below both thresholds (0.90 and 0.95)
     metrics = _passing_metrics()
-    # Both at 0.0 — catastrophically low but DEFERRED so must NOT breach.
     metrics["guardrail_precision"] = 0.0
     metrics["guardrail_recall"] = 0.0
 
     breaches = _gate(metrics)
-    assert not any("guardrail" in b for b in breaches)
+    assert any("guardrail_precision" in b for b in breaches)
+    assert any("guardrail_recall" in b for b in breaches)
 
 
 def test_gate_latency_breach() -> None:

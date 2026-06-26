@@ -142,7 +142,7 @@ async def chat(
         #    Synchronous (engine.py has no I/O); wrapped in its own Logfire span.
         #    req: guardrails-001, guardrails-003..007, guardrails-013
         with logfire.span("guardrails.input"):
-            gr_in: GuardrailResult = run_input_guardrails(
+            gr_in: GuardrailResult = await run_input_guardrails(
                 req.message, decision.active_lang, settings
             )
 

@@ -21,11 +21,11 @@ wiring. Drive task-by-task via `/implement guardrails`.
 
 - [x] 5. Wire `app/api/chat.py`: run input guardrails BEFORE the agent (block → short-circuit to a safe-refusal `TurnOutput` with `guardrails.input` + `needs_review`, no model call; redact → feed redacted text; flag → carry names), run output guardrails AFTER (block/redact the reply), set `turn.guardrails` + OR `needs_review`, emit Logfire span + PostHog event with NAMES ONLY (no content). — _req: guardrails-001, guardrails-002, guardrails-003..guardrails-010, guardrails-012, guardrails-013 — owner: backend-engineer_
 
-- [ ] 6. Un-defer the eval thresholds: remove `guardrail_precision` + `guardrail_recall` from `DEFERRED_THRESHOLDS` in `backend/evals/config.py` (and update `run.py`/comments) so the suite + CI gate enforce them. — _req: guardrails-018 — owner: eval-engineer_
+- [x] 6. Un-defer the eval thresholds: remove `guardrail_precision` + `guardrail_recall` from `DEFERRED_THRESHOLDS` in `backend/evals/config.py` (and update `run.py`/comments) so the suite + CI gate enforce them. — _req: guardrails-018 — owner: eval-engineer_
 
-- [ ] 7. Align + expand `backend/evals/datasets/adversarial.yaml`: ensure every `must_trip` label equals a guardrail name (`prompt_injection`/`jailbreak`/`pii_detector`/`toxicity`/`secret_leak`); add cases per category + benign precision controls so guardrail precision/recall is meaningful. — _req: guardrails-017 — owner: eval-engineer_
+- [x] 7. Align + expand `backend/evals/datasets/adversarial.yaml`: ensure every `must_trip` label equals a guardrail name (`prompt_injection`/`jailbreak`/`pii_detector`/`toxicity`/`secret_leak`); add cases per category + benign precision controls so guardrail precision/recall is meaningful. — _req: guardrails-017 — owner: eval-engineer_
 
-- [ ] 8. (Tier-3 flag) Implement the optional LLM guardrail layer behind `guardrails_llm_enabled` — a lazy classifier (or `pydantic-ai-guardrails` `GuardedAgent`, API confirmed at integration) that augments (never replaces) the deterministic verdict; default off. — _req: guardrails-015 — owner: backend-engineer_
+- [x] 8. (Tier-3 flag) Implement the optional LLM guardrail layer behind `guardrails_llm_enabled` — a lazy classifier (or `pydantic-ai-guardrails` `GuardedAgent`, API confirmed at integration) that augments (never replaces) the deterministic verdict; default off. — _req: guardrails-015 — owner: backend-engineer_
 
 - [ ] 9. Add tests: `detectors` (each category incl. ES/EN/PT positives + benign negatives, PII redaction, secret detection), `engine` (block/redact/flag actions + fail-safe on detector error + `guardrails_enabled=false` skip), and the `/chat` boundary (injection→block+refusal+no model call; PII→redact+continue; output secret_leak→block; clean→empty guardrails; names match labels) via TestModel + aiosqlite. — _req: guardrails-001..guardrails-016, guardrails-019 — owner: backend-engineer_
 

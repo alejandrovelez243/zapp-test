@@ -14,8 +14,9 @@ Architecture (evaluation-001, evaluation-008, evaluation-009):
 3. Run ``dataset.evaluate_sync(run_turn)`` for each suite.
 4. Compute aggregate metrics (evaluation-002 through -006).
 5. Render ONE markdown report to ``evals/reports/latest-report.md`` (evaluation-009).
-6. Compare every metric to ``THRESHOLDS``; skip ``DEFERRED_THRESHOLDS`` keys
-   (evaluation-007, evaluation-008).
+6. Compare every metric to ``THRESHOLDS``; skip ``DEFERRED_THRESHOLDS`` keys if
+   any are present — guardrail keys have been un-deferred (guardrails-018) and
+   DEFERRED_THRESHOLDS is now empty (evaluation-007, evaluation-008).
 7. ``sys.exit(1)`` if any threshold is breached; ``sys.exit(0)`` otherwise.
 
 Judge errors (evaluation-019): an exception raised by SubjectiveQualityJudge is
@@ -315,7 +316,7 @@ def _gate(metrics: dict[str, float]) -> list[str]:
     breaches: list[str] = []
     for key, threshold in THRESHOLDS.items():
         if key in DEFERRED_THRESHOLDS:
-            continue  # guardrail thresholds deferred until guardrails feature lands
+            continue  # skip genuinely-future keys (DEFERRED_THRESHOLDS is now empty)
         val = metrics.get(key)
         if val is None:
             continue  # metric not computed for this run
