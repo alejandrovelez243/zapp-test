@@ -12,15 +12,15 @@ Drive task-by-task via `/implement evaluation`.
 
 ## Tasks
 
-- [ ] 1. Create `backend/evals/config.py` — the single source: `JUDGE_MODEL="gateway/openai:gpt-4.1-mini"`, `JUDGE_MODEL_CI`, `JUDGE_TEMPERATURE=0.0`, `THRESHOLDS` (task_success_rate, language_fidelity, guardrail_precision, guardrail_recall, judge_mean, latency_p95_ms, cost_per_conversation_usd) with the **guardrail_* thresholds marked DEFERRED/disabled** until `guardrails` lands, and a `PRICE_TABLE` (USD per 1M in/out tokens per model). — _req: evaluation-007, evaluation-010 — owner: eval-engineer_
+- [x] 1. Create `backend/evals/config.py` — the single source: `JUDGE_MODEL="gateway/openai:gpt-4.1-mini"`, `JUDGE_MODEL_CI`, `JUDGE_TEMPERATURE=0.0`, `THRESHOLDS` (task_success_rate, language_fidelity, guardrail_precision, guardrail_recall, judge_mean, latency_p95_ms, cost_per_conversation_usd) with the **guardrail_* thresholds marked DEFERRED/disabled** until `guardrails` lands, and a `PRICE_TABLE` (USD per 1M in/out tokens per model). — _req: evaluation-007, evaluation-010 — owner: eval-engineer_
 
-- [ ] 2. Implement `backend/evals/judge.py` — a structured int judge `Agent(JUDGE_MODEL, output_type=int, model_settings={"temperature":0}, instructions=<documented 1–5 rubric>)` (discrete 1–5, no 0–1 mapping); reusable by offline + runtime. — _req: evaluation-005, evaluation-010 — owner: eval-engineer_
+- [x] 2. Implement `backend/evals/judge.py` — a structured int judge `Agent(JUDGE_MODEL, output_type=int, model_settings={"temperature":0}, instructions=<documented 1–5 rubric>)` (discrete 1–5, no 0–1 mapping); reusable by offline + runtime. — _req: evaluation-005, evaluation-010 — owner: eval-engineer_
 
-- [ ] 3. Implement `backend/evals/task.py` `run_turn(inputs) -> dict` — mirror the `/chat` boundary WITHOUT HTTP/DB (detect → resolve_active_lang → AgentDeps → `get_orchestrator().run` via gateway → reconcile → `TurnOutput.model_dump()`), capturing per-case duration + `RunUsage`. — _req: evaluation-001 — owner: eval-engineer_
+- [x] 3. Implement `backend/evals/task.py` `run_turn(inputs) -> dict` — mirror the `/chat` boundary WITHOUT HTTP/DB (detect → resolve_active_lang → AgentDeps → `get_orchestrator().run` via gateway → reconcile → `TurnOutput.model_dump()`), capturing per-case duration + `RunUsage`. — _req: evaluation-001 — owner: eval-engineer_
 
 - [ ] 4. Implement `backend/evals/evaluators.py` — `TaskSuccess`, `LanguageFidelity` (lingua on reply == active_lang), `GuardrailHit` (compare `guardrails` to `metadata.must_trip` → tp/fp/fn), `SubjectiveQualityJudge` (calls the structured judge). — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-020 — owner: eval-engineer_
 
-- [ ] 5. Author `backend/evals/datasets/happy.yaml` + `backend/evals/datasets/adversarial.yaml` (pydantic-evals `cases`: name/inputs/expected_output/metadata, incl. `must_trip` for adversarial). `multilingual.yaml` already exists. — _req: evaluation-011 — owner: eval-engineer_
+- [x] 5. Author `backend/evals/datasets/happy.yaml` + `backend/evals/datasets/adversarial.yaml` (pydantic-evals `cases`: name/inputs/expected_output/metadata, incl. `must_trip` for adversarial). `multilingual.yaml` already exists. — _req: evaluation-011 — owner: eval-engineer_
 
 - [ ] 6. Implement `backend/evals/run.py` (`python -m evals.run`) + `report.py` — load all datasets, `evaluate_sync(run_turn)`, compute task success %, language fidelity %, guardrail precision/recall, judge mean (1–5), latency p50/p95 (`statistics.quantiles`), cost/conversation (PRICE_TABLE × RunUsage); render ONE markdown report + print summary; compare to `THRESHOLDS` (skip DEFERRED ones) and `sys.exit(1)` on breach; a judge error → case un-judged (not-passing), continue. — _req: evaluation-001, evaluation-006, evaluation-008, evaluation-009, evaluation-019 — owner: eval-engineer_
 
