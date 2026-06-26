@@ -27,7 +27,7 @@ import logging
 
 import httpx
 import logfire
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -42,14 +42,32 @@ from app.agents.session import (
 )
 from app.config import get_settings
 from app.contract import TurnOutput
-from app.db import get_session
+from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
+from app.eval.runtime import evaluate_conversation, is_goodbye
 from app.lang.detector import LanguageDetector
 from app.lang.state import resolve_active_lang
 from app.observability import get_posthog
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _background_eval(session_id: str) -> None:
+    """Open a fresh session and evaluate the ended conversation.
+
+    Executed as a FastAPI ``BackgroundTask`` after a goodbye-intent message is
+    detected in the ``/chat`` handler.  Opens its own ``AsyncSession`` via
+    ``get_sessionmaker()`` so it is fully decoupled from the request-scoped ``db``
+    (which is closed before background tasks execute).
+
+    ``evaluate_conversation`` handles its own commit and never raises, so no
+    additional error handling is required here.
+
+    req: evaluation-015, evaluation-018
+    """
+    async with get_sessionmaker()() as db:
+        await evaluate_conversation(db, session_id)
 
 
 class ChatRequest(BaseModel):
@@ -63,6 +81,7 @@ class ChatRequest(BaseModel):
 async def chat(
     req: ChatRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> TurnOutput:
     """Full chat turn: detect → resolve → run agent → persist → return TurnOutput.
@@ -194,5 +213,12 @@ async def chat(
                     "needs_review": turn.needs_review,
                 },
             )
+
+        # 10. Schedule end-of-conversation evaluation if goodbye intent detected.
+        #     A fresh AsyncSession is opened inside ``_background_eval`` so it is
+        #     decoupled from the now-committed request-scoped ``db`` session.
+        #     req: evaluation-015, evaluation-018
+        if settings.runtime_eval_enabled and is_goodbye(req.message, decision.active_lang):
+            background_tasks.add_task(_background_eval, req.session_id)
 
         return turn

@@ -22,7 +22,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 5. Author `backend/evals/datasets/happy.yaml` + `backend/evals/datasets/adversarial.yaml` (pydantic-evals `cases`: name/inputs/expected_output/metadata, incl. `must_trip` for adversarial). `multilingual.yaml` already exists. — _req: evaluation-011 — owner: eval-engineer_
 
-- [ ] 6. Implement `backend/evals/run.py` (`python -m evals.run`) + `report.py` — load all datasets, `evaluate_sync(run_turn)`, compute task success %, language fidelity %, guardrail precision/recall, judge mean (1–5), latency p50/p95 (`statistics.quantiles`), cost/conversation (PRICE_TABLE × RunUsage); render ONE markdown report + print summary; compare to `THRESHOLDS` (skip DEFERRED ones) and `sys.exit(1)` on breach; a judge error → case un-judged (not-passing), continue. — _req: evaluation-001, evaluation-006, evaluation-008, evaluation-009, evaluation-019 — owner: eval-engineer_
+- [x] 6. Implement `backend/evals/run.py` (`python -m evals.run`) + `report.py` — load all datasets, `evaluate_sync(run_turn)`, compute task success %, language fidelity %, guardrail precision/recall, judge mean (1–5), latency p50/p95 (`statistics.quantiles`), cost/conversation (PRICE_TABLE × RunUsage); render ONE markdown report + print summary; compare to `THRESHOLDS` (skip DEFERRED ones) and `sys.exit(1)` on breach; a judge error → case un-judged (not-passing), continue. — _req: evaluation-001, evaluation-006, evaluation-008, evaluation-009, evaluation-019 — owner: eval-engineer_
 
 - [ ] 7. Generate and COMMIT `backend/evals/reports/example-report.md` — a pre-generated example report (run the suite once with `PYDANTIC_AI_GATEWAY_API_KEY`; if no key is available, hand-author a representative report and regenerate later). — _req: evaluation-009, evaluation-013 — owner: eval-engineer_
 
@@ -32,7 +32,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 10. Implement `backend/app/eval/runtime.py` — `async evaluate_conversation(session_id)` (load message_history → judge transcript → persist `SessionGrade` with `needs_review = score < judge_mean` → Logfire span (content) + PostHog event (METADATA-ONLY) → never raises); `is_goodbye(message, lang)` deterministic ES/EN/PT matcher; and the idle-sweep coroutine (idle > timeout AND `graded_at IS NULL` → grade → set `graded_at`). — _req: evaluation-015, evaluation-016, evaluation-017, evaluation-019 — owner: eval-engineer_
 
-- [ ] 11. Wire the runtime triggers: `app/main.py` lifespan starts/stops the idle-sweep task WHERE `runtime_eval_enabled`; `app/api/chat.py` schedules `evaluate_conversation` as a background task after returning the turn when `is_goodbye(...)` and `runtime_eval_enabled`. — _req: evaluation-014, evaluation-015, evaluation-018 — owner: backend-engineer_
+- [x] 11. Wire the runtime triggers: `app/main.py` lifespan starts/stops the idle-sweep task WHERE `runtime_eval_enabled`; `app/api/chat.py` schedules `evaluate_conversation` as a background task after returning the turn when `is_goodbye(...)` and `runtime_eval_enabled`. — _req: evaluation-014, evaluation-015, evaluation-018 — owner: backend-engineer_
 
 - [ ] 12. Add the eval-gate to `.github/workflows/ci.yml` — a step `uv run python -m evals.run` on push/PR with `PYDANTIC_AI_GATEWAY_API_KEY` from GitHub Secrets and the CI judge id; the pipeline fails on non-zero exit. — _req: evaluation-012 — owner: devops-engineer_
 
