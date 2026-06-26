@@ -16,6 +16,8 @@ from lingua import ConfidenceValue, Language, LanguageDetectorBuilder
 from lingua import LanguageDetector as _LinguaDetector  # alias to avoid name clash
 from pydantic import BaseModel, Field
 
+from app.config import SUPPORTED_LANGS
+
 # ---------------------------------------------------------------------------
 # ISO 639-1 (2-char lowercase) -> lingua.Language mapping
 # Bounded set: three supported languages + common Latin-script confusables so
@@ -66,7 +68,7 @@ class LanguageDetector:
 
     def __init__(
         self,
-        supported: tuple[str, ...] = ("es", "en", "pt"),
+        supported: tuple[str, ...] = SUPPORTED_LANGS,  # single source: app.config
         min_input_chars: int = 12,
     ) -> None:
         self._min_input_chars: int = min_input_chars

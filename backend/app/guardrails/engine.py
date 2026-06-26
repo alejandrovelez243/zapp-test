@@ -51,10 +51,6 @@ __all__ = ["GuardrailResult", "run_input_guardrails", "run_output_guardrails"]
 # req: guardrails-019
 _GUARDRAIL_ERROR_MARKER: str = "guardrail_error"
 
-# All supported active-language codes; used to check output toxicity across all langs
-# when the output-guardrail function has no access to the session's active_lang.
-_SUPPORTED_LANGS: tuple[str, ...] = ("en", "es", "pt")
-
 
 # ---------------------------------------------------------------------------
 # Data model — §4 of the design
@@ -329,7 +325,8 @@ def run_output_guardrails(
 
     # req: guardrails-009 — toxicity in output → block.
     # All supported languages are checked since reply language is opaque here.
-    if any(detect_toxicity(reply, lang) for lang in _SUPPORTED_LANGS):
+    # Uses settings.supported (the single source — app.config.SUPPORTED_LANGS).
+    if any(detect_toxicity(reply, lang) for lang in settings.supported):
         triggered.append("toxicity")
         should_block = True
 

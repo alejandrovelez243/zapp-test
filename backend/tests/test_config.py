@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 
 import app.observability as _obs_module
-from app.config import get_settings
+from app.config import FALLBACK_LANG, SUPPORTED_LANGS, get_settings
 from app.observability import configure_observability
 
 
@@ -35,14 +35,15 @@ def test_settings_load_with_required_fields_only(monkeypatch: pytest.MonkeyPatch
 
 
 def test_supported_languages_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """supported == ('es', 'en', 'pt') and fallback_lang == 'en'.  # platform-scaffold-012"""
+    """supported == SUPPORTED_LANGS and fallback_lang == FALLBACK_LANG.  # platform-scaffold-012"""
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/testdb")
     monkeypatch.setenv("ADMIN_TOKEN", "tok")
 
     settings = get_settings()
 
-    assert settings.supported == ("es", "en", "pt")
-    assert settings.fallback_lang == "en"
+    # Reference the single-source constants from app.config — never hardcode the tuple.
+    assert settings.supported == SUPPORTED_LANGS
+    assert settings.fallback_lang == FALLBACK_LANG
 
 
 def test_gateway_key_defaults_to_none_and_no_direct_provider_fields(

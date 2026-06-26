@@ -32,6 +32,7 @@ from sqlmodel import SQLModel
 
 from app.agents.orchestrator import get_orchestrator
 from app.agents.session import ConversationSession  # noqa: F401 — registers table in metadata
+from app.config import SUPPORTED_LANGS
 from app.contract import TurnOutput
 from app.db import get_session
 from app.main import app
@@ -174,7 +175,7 @@ async def test_chat_degrade_model_http_error_returns_200_needs_review(
     # active_lang must be one of the supported codes — degraded_turn() preserves the
     # resolve_active_lang() decision even when the model call fails.
     # req: multilingual-003
-    assert turn.active_lang in ("es", "en", "pt"), (
+    assert turn.active_lang in SUPPORTED_LANGS, (
         f"active_lang {turn.active_lang!r} not in supported set"
     )
 
@@ -213,7 +214,7 @@ async def test_chat_degrade_unexpected_behavior_returns_200_needs_review(
     assert response.status_code == 200
     turn = TurnOutput.model_validate(response.json())
     assert turn.needs_review is True
-    assert turn.active_lang in ("es", "en", "pt")
+    assert turn.active_lang in SUPPORTED_LANGS
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +248,7 @@ async def test_chat_degrade_usage_limit_exceeded_returns_200_needs_review(
 
     turn = TurnOutput.model_validate(data)
     assert turn.needs_review is True
-    assert turn.active_lang in ("es", "en", "pt")
+    assert turn.active_lang in SUPPORTED_LANGS
     assert turn.reply  # safe fallback reply must be present
 
 

@@ -28,6 +28,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.agents.session import ConversationSession  # noqa: F401 — registers table in metadata
+from app.config import SUPPORTED_LANGS
 from app.contract import TurnOutput
 from app.db import get_session
 from app.main import app
@@ -166,8 +167,8 @@ async def test_chat_block_prompt_injection_returns_200_with_refusal(
         f"Expected empty guardrails.output on block path, got {turn.guardrails.output!r}"
     )
 
-    # active_lang must be a supported code.
-    assert turn.active_lang in ("es", "en", "pt"), (
+    # active_lang must be a supported code (single source: app.config.SUPPORTED_LANGS).
+    assert turn.active_lang in SUPPORTED_LANGS, (
         f"active_lang {turn.active_lang!r} not in supported set"
     )
 

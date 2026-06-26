@@ -12,6 +12,19 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# ---------------------------------------------------------------------------
+# Module-level language constants — the SINGLE source of truth.
+# All other modules MUST import from here; never hardcode the tuple elsewhere.
+# req: multilingual-003, platform-scaffold-012
+# ---------------------------------------------------------------------------
+SUPPORTED_LANGS: tuple[str, ...] = ("es", "en", "pt")
+FALLBACK_LANG: str = "en"
+LANG_DISPLAY_NAMES: dict[str, str] = {
+    "es": "Spanish",
+    "en": "English",
+    "pt": "Portuguese",
+}
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment / ``.env``.
@@ -60,8 +73,8 @@ class Settings(BaseSettings):
 
     # --- Language policy (consumed by later features) ---
     # req: multilingual-003 — supported language set and fallback
-    supported: tuple[str, ...] = ("es", "en", "pt")
-    fallback_lang: str = "en"
+    supported: tuple[str, ...] = SUPPORTED_LANGS
+    fallback_lang: str = FALLBACK_LANG
     # req: multilingual-011 — minimum detector confidence to trust a detection
     lang_confidence_min: float = 0.55
     # req: multilingual-011 — inputs shorter than this are too short to detect reliably

@@ -32,7 +32,7 @@ from functools import lru_cache
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 
-from app.config import get_settings
+from app.config import LANG_DISPLAY_NAMES, get_settings  # single source for display names
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
 from app.lang.detector import LanguageDetector
@@ -150,8 +150,8 @@ def _with_active_language(ctx: RunContext[AgentDeps]) -> str:
     between ``active_lang`` (session lock) and ``detected_lang`` (this turn) means.
     """
     active_lang = ctx.deps.active_lang
-    _lang_names: dict[str, str] = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
-    lang_name = _lang_names.get(active_lang, active_lang)
+    # LANG_DISPLAY_NAMES imported from app.config — the single source. req: multilingual-007
+    lang_name = LANG_DISPLAY_NAMES.get(active_lang, active_lang)
     return (
         f"SESSION LANGUAGE: {lang_name} ({active_lang}). "
         f"You MUST write `reply` ONLY in {lang_name} — every word of the reply must be in "

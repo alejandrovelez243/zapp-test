@@ -25,6 +25,7 @@ from sqlmodel import SQLModel
 
 from app.agents.orchestrator import get_orchestrator
 from app.agents.session import ConversationSession  # noqa: F401 — registers table in metadata
+from app.config import SUPPORTED_LANGS
 from app.contract import TurnOutput
 from app.db import get_session
 from app.main import app
@@ -148,8 +149,8 @@ async def test_chat_multilingual_happy_path_es(
         f"Expected active_lang='es' (first-turn lock), got {turn.active_lang!r}"
     )
 
-    # active_lang must be one of the three supported codes. req: multilingual-003
-    assert turn.active_lang in ("es", "en", "pt")
+    # active_lang must be one of the supported codes. req: multilingual-003
+    assert turn.active_lang in SUPPORTED_LANGS
 
     # lang_confidence is the agreement score (both signals = "es"). req: multilingual-005
     assert 0.0 <= turn.lang_confidence <= 1.0
@@ -210,4 +211,4 @@ async def test_chat_multilingual_all_nine_fields_types(
 
     # Deserializes correctly. req: multilingual-001
     turn = TurnOutput.model_validate(data)
-    assert turn.active_lang in ("es", "en", "pt")
+    assert turn.active_lang in SUPPORTED_LANGS
