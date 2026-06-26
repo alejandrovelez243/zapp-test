@@ -1,0 +1,142 @@
+# backend/evals/datasets/happy.yaml
+#
+# Happy-path eval dataset for pydantic-evals.
+# 7 cases covering core FAQ-RAG retrieval for factual school questions in ES, EN, and PT.
+# Satisfies: evaluation-011 (committed datasets covering happy-path).
+#
+# Per-turn JSON contract fields asserted:
+#   active_lang, needs_review
+#
+# All cases: inputs = {message, ip}; expected_output = {active_lang, needs_review: false};
+# metadata = {suite: happy, lang, must_trip: []}
+#
+# Supported languages: es, en, pt.
+# IPs are geo-plausible: MX/LATAM -> 189.210.1.1, US -> 72.14.192.1, BR -> 200.147.1.1
+
+cases:
+
+  # ---------------------------------------------------------------------------
+  # happy-es-faq-school-programs-01
+  # Scenario: Spanish-speaking student asks about philosophy programs at the school.
+  # Expects: active_lang locks to es, reply in ES, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-es-faq-school-programs-01
+    inputs:
+      message: "¿Cuáles son los programas de filosofía que ofrece la escuela?"
+      ip: "189.210.1.1"
+    expected_output:
+      active_lang: es
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: es
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-en-faq-school-programs-01
+  # Scenario: English-speaking student asks about philosophy programs at the school.
+  # Expects: active_lang locks to en, reply in EN, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-en-faq-school-programs-01
+    inputs:
+      message: "What philosophy programs does the school offer?"
+      ip: "72.14.192.1"
+    expected_output:
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: en
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-es-faq-stoicism-seminar-01
+  # Scenario: Spanish-speaking student asks for the dates of the stoicism seminar.
+  # Expects: active_lang=es, correct event-retrieval reply, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-es-faq-stoicism-seminar-01
+    inputs:
+      message: "¿Cuáles son las fechas del seminario de estoicismo este mes?"
+      ip: "189.210.1.1"
+    expected_output:
+      active_lang: es
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: es
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-en-faq-course-enrollment-01
+  # Scenario: English-speaking student asks how to enroll in a course.
+  # Expects: active_lang=en, enrollment-process reply, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-en-faq-course-enrollment-01
+    inputs:
+      message: "How do I enroll in the Aristotle ethics course for next semester?"
+      ip: "72.14.192.1"
+    expected_output:
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: en
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-es-faq-tuition-fees-01
+  # Scenario: Spanish-speaking student asks about tuition fees.
+  # Expects: active_lang=es, cost/fee information in reply, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-es-faq-tuition-fees-01
+    inputs:
+      message: "¿Cuánto cuesta inscribirse en los cursos de la escuela de filosofía?"
+      ip: "189.210.1.1"
+    expected_output:
+      active_lang: es
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: es
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-pt-faq-available-courses-01
+  # Scenario: Portuguese-speaking (BR) student asks about available courses.
+  # Expects: active_lang=pt, reply in PT, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-pt-faq-available-courses-01
+    inputs:
+      message: "Quais cursos de filosofia estão disponíveis neste semestre?"
+      ip: "200.147.1.1"
+    expected_output:
+      active_lang: pt
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: pt
+      must_trip: []
+      requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # happy-en-faq-school-schedule-01
+  # Scenario: English-speaking student asks about the school's weekly schedule.
+  # Expects: active_lang=en, schedule info in reply, needs_review=false.
+  # ---------------------------------------------------------------------------
+  - name: happy-en-faq-school-schedule-01
+    inputs:
+      message: "What are the school's class hours and weekly schedule?"
+      ip: "72.14.192.1"
+    expected_output:
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: en
+      must_trip: []
+      requirement: evaluation-011

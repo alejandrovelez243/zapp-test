@@ -65,6 +65,11 @@ class ConversationSession(SQLModel, table=True):
         ``ModelMessagesTypeAdapter.dump_json(result.all_messages())``.  ``None`` before
         the first turn's messages are persisted.  Stored as ``TEXT`` so it works across
         all Postgres versions without a JSON operator dependency.
+    graded_at:
+        Timestamp (naive-UTC) set by the runtime evaluator after a ``SessionGrade``
+        row is persisted.  ``None`` until the conversation has been graded.  Used by
+        the idle-sweep guard to avoid re-grading sessions already evaluated.
+        req: evaluation-016, evaluation-018
     """
 
     # req: multilingual-007 — primary key is the externally supplied session id
@@ -85,6 +90,62 @@ class ConversationSession(SQLModel, table=True):
     # req: multilingual-007 — message history for coherence replay
     # Serialised via ModelMessagesTypeAdapter; null until the first turn completes.
     history_json: str | None = None
+
+    # req: evaluation-016, evaluation-018 — sweep guard; None until graded.
+    graded_at: datetime | None = None
+
+
+class SessionGrade(SQLModel, table=True):
+    """Persisted evaluation score for a completed conversation.
+
+    Written by ``evaluate_conversation`` (runtime judge) after the structured
+    judge returns a 1-5 score over the full transcript.  One row per graded
+    session; the idle-sweep uses ``ConversationSession.graded_at IS NULL`` to
+    find un-graded sessions.
+
+    Fields
+    ------
+    id:
+        Auto-increment surrogate key.
+    session_id:
+        Foreign key (by convention, not constraint) to ``ConversationSession.id``.
+        Indexed for fast lookup by session.
+    score:
+        Discrete judge score 1-5 (1 = harmful/off-language, 5 = fully correct).
+    rationale:
+        Free-text explanation from the judge run; empty string when unavailable.
+    needs_review:
+        ``True`` when ``score < THRESHOLDS["judge_mean"]``; flags sessions for
+        human review in the admin dashboard.
+    model:
+        The judge model id used to produce this grade (e.g.
+        ``"gateway/openai:gpt-4.1-mini"``); stored for audit / model-drift tracking.
+    created_at:
+        Row creation timestamp (naive-UTC); set at persist time.
+
+    req: evaluation-016
+    """
+
+    # req: evaluation-016 — surrogate PK (auto-increment)
+    id: int | None = Field(default=None, primary_key=True)
+
+    # req: evaluation-016 — link back to the conversation; indexed for fast lookup
+    session_id: str = Field(index=True)
+
+    # req: evaluation-016 -- discrete 1-5 judge score
+    score: int
+
+    # Judge rationale (optional; empty string when not returned)
+    rationale: str = ""
+
+    # req: evaluation-016 — flags sessions scoring below judge_mean threshold
+    needs_review: bool = False
+
+    # req: evaluation-016 — audit trail: which judge model produced this grade
+    model: str
+
+    # req: evaluation-016 — naive-UTC creation timestamp; default set at insert time
+    created_at: datetime = Field(default_factory=_now_utc)
 
 
 # ---------------------------------------------------------------------------

@@ -26,9 +26,9 @@ Drive task-by-task via `/implement evaluation`.
 
 - [ ] 7. Generate and COMMIT `backend/evals/reports/example-report.md` — a pre-generated example report (run the suite once with `PYDANTIC_AI_GATEWAY_API_KEY`; if no key is available, hand-author a representative report and regenerate later). — _req: evaluation-009, evaluation-013 — owner: eval-engineer_
 
-- [ ] 8. Add the `SessionGrade` SQLModel (session_id, score 1–5, rationale, needs_review, model, created_at) + a `graded_at: datetime | None` column on `ConversationSession`, with Alembic migration `0004` (naive-UTC timestamps, matching the project convention). — _req: evaluation-016 — owner: backend-engineer_
+- [x] 8. Add the `SessionGrade` SQLModel (session_id, score 1–5, rationale, needs_review, model, created_at) + a `graded_at: datetime | None` column on `ConversationSession`, with Alembic migration `0004` (naive-UTC timestamps, matching the project convention). — _req: evaluation-016 — owner: backend-engineer_
 
-- [ ] 9. Add `runtime_eval_enabled: bool = True` (flag) and `conversation_idle_timeout: int = 900` to `app/config.py` `Settings`. — _req: evaluation-014, evaluation-018 — owner: backend-engineer_
+- [x] 9. Add `runtime_eval_enabled: bool = True` (flag) and `conversation_idle_timeout: int = 900` to `app/config.py` `Settings`. — _req: evaluation-014, evaluation-018 — owner: backend-engineer_
 
 - [ ] 10. Implement `backend/app/eval/runtime.py` — `async evaluate_conversation(session_id)` (load message_history → judge transcript → persist `SessionGrade` with `needs_review = score < judge_mean` → Logfire span (content) + PostHog event (METADATA-ONLY) → never raises); `is_goodbye(message, lang)` deterministic ES/EN/PT matcher; and the idle-sweep coroutine (idle > timeout AND `graded_at IS NULL` → grade → set `graded_at`). — _req: evaluation-015, evaluation-016, evaluation-017, evaluation-019 — owner: eval-engineer_
 

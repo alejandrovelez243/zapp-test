@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     # req: multilingual-009 — Tier-3 flag; default off keeps the hard session lock
     lang_autoswitch: bool = False
 
+    # --- Evaluation runtime (req: evaluation-014, evaluation-018) ---
+    # Tier-3 flag: when False, skips the end-of-conversation judge and the idle sweep.
+    runtime_eval_enabled: bool = True
+    # Seconds of inactivity after which a session is considered "ended" and eligible
+    # for the idle-sweep grader.
+    conversation_idle_timeout: int = 900
+
 
 @lru_cache
 def get_settings() -> Settings:
