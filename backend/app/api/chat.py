@@ -52,7 +52,7 @@ from app.contract import GuardrailReport, TurnOutput
 from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
 from app.eval.runtime import evaluate_conversation, is_goodbye
-from app.guardrails.engine import GuardrailResult, run_input_guardrails, run_output_guardrails
+from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
 from app.lang.detector import LanguageDetector
 from app.lang.state import resolve_active_lang
@@ -135,12 +135,11 @@ async def chat(
         request_ip: str = request.client.host if request.client else "unknown"
 
         # 5. Run input guardrails BEFORE the agent.
-        #    Synchronous (engine.py has no I/O); wrapped in its own Logfire span.
+        #    Construct the engine once per turn (cheap); wrapped in its own Logfire span.
         #    req: guardrails-001, guardrails-003..007, guardrails-013
+        engine = GuardrailEngine(settings)
         with logfire.span("guardrails.input"):
-            gr_in: GuardrailResult = await run_input_guardrails(
-                req.message, decision.active_lang, settings
-            )
+            gr_in: GuardrailResult = await engine.run_input(req.message, decision.active_lang)
 
         if gr_in.blocked:
             # Block path: persist session language state so subsequent turns are
@@ -276,7 +275,7 @@ async def chat(
         #     Wrapped in its own Logfire span; modify turn.reply in-place.
         #     req: guardrails-001, guardrails-008, guardrails-009, guardrails-010, guardrails-013
         with logfire.span("guardrails.output"):
-            gr_out: GuardrailResult = run_output_guardrails(turn.reply, settings)
+            gr_out: GuardrailResult = engine.run_output(turn.reply)
 
         if gr_out.blocked:
             # Replace the reply with a safe refusal (block wins over redact).

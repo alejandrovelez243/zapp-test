@@ -28,7 +28,7 @@ from app.agents.session import ConversationSession
 from app.config import get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
-from app.guardrails.engine import run_input_guardrails, run_output_guardrails
+from app.guardrails.engine import GuardrailEngine
 from app.guardrails.refusal import safe_refusal
 from app.lang.detector import LanguageDetector
 from app.lang.state import resolve_active_lang
@@ -104,7 +104,8 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
 
     # Step 3b — Input guardrails (mirror the /chat boundary). A block short-circuits the
     #   turn WITHOUT a model call; redact forwards a cleaned message; flag carries names.
-    gr_in = await run_input_guardrails(message, decision.active_lang, settings)
+    engine = GuardrailEngine(settings)
+    gr_in = await engine.run_input(message, decision.active_lang)
     if gr_in.blocked:
         primary_in = gr_in.triggered[0] if gr_in.triggered else "default"
         blocked = TurnOutput(
@@ -157,7 +158,7 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
         # Step 7 — Output guardrails (mirror /chat): block/redact the reply, then populate
         #   the guardrails contract field + needs_review from both input and output hits.
         turn = result.output
-        gr_out = run_output_guardrails(turn.reply, settings)
+        gr_out = engine.run_output(turn.reply)
         if gr_out.blocked:
             primary_out = gr_out.triggered[0] if gr_out.triggered else "default"
             turn.reply = safe_refusal(turn.active_lang, primary_out)
