@@ -445,6 +445,20 @@ class TestDetectSecretLeak:
             is True
         )
 
+    def test_detect_secret_leak_short_token_no_false_positive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A short/dummy admin token (e.g. CI's "ci") must NOT substring-match an
+        ordinary word ("ci" inside "Stoicism") → no false-positive secret_leak.
+
+        Regression: ADMIN_TOKEN="ci" previously blocked the benign reply
+        "...courses in Stoicism, Ethics, and Logic." in CI.
+        req: guardrails-010, guardrails-014
+        """
+        monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+        monkeypatch.setenv("ADMIN_TOKEN", "ci")
+        assert _d.detect_secret_leak("Zapp offers courses in Stoicism, Ethics, and Logic.") is False
+
     def test_detect_secret_leak_prompt_fragment(self) -> None:
         """System-prompt fragment ('the system instructions are:') → True.
 

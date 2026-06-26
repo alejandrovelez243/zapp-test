@@ -41,6 +41,11 @@ __all__ = [
     "PiiMatch",
 ]
 
+# Minimum length for the configured admin token to be treated as a leakable secret.
+# Shorter values (e.g. a dummy ``ADMIN_TOKEN="ci"`` in CI) are ignored, because they
+# would substring-match ordinary words ("ci" inside "Stoicism") and false-positive.
+_MIN_ADMIN_TOKEN_LEN: int = 16
+
 
 # ---------------------------------------------------------------------------
 # Data model — §4 of the design
@@ -574,7 +579,11 @@ class Detectors:
                 from app.config import get_settings
 
                 admin_token: str = get_settings().admin_token
-                if admin_token and admin_token in text:
+                # Match the admin token only when it is long enough to be a real secret.
+                # Short/dummy tokens (e.g. ADMIN_TOKEN="ci" in CI) would substring-match
+                # ordinary words like "Stoicism" ("...stoiCIsm...") and false-positive.
+                # Real admin tokens are long, random strings.
+                if len(admin_token) >= _MIN_ADMIN_TOKEN_LEN and admin_token in text:
                     return True
 
             # 2. API key shapes
