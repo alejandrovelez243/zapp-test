@@ -1,0 +1,389 @@
+# backend/evals/datasets/multilingual.yaml
+#
+# Committed multilingual eval dataset for pydantic-evals.
+# 14 Cases mapping 1:1 to specs/multilingual/requirements.md criteria
+# multilingual-001 .. multilingual-014.
+#
+# Runner (LLMJudge language-fidelity + deterministic active_lang / needs_review
+# assertions) is implemented in the `evaluation` spec (backend/evals/run.py) and
+# is NOT present in this file.  This file is the dataset only.
+#
+# Per-turn JSON contract fields asserted:
+#   reply, detected_lang, active_lang, lang_confidence,
+#   final_normalized_text, detected_country, confidence_score,
+#   needs_review, guardrails{input,output}
+#
+# Supported languages: es, en, pt.
+# Unsupported language -> active_lang = fallback (en) + needs_review=true.
+# Fallback lang config: fallback_lang=en, lang_confidence_min=0.55, min_input_chars=12.
+
+cases:
+
+  # ---------------------------------------------------------------------------
+  # multilingual-001
+  # Requirement: THE SYSTEM SHALL emit the per-turn JSON contract with all nine
+  # fields populated on every chat turn.
+  # Scenario: happy-path first-turn ES question; assert all nine fields are present
+  # and non-null in the response.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-001
+    inputs:
+      session_id: sess-ml-001
+      message: "¿Cuáles son las fechas del seminario de estoicismo este mes?"
+    expected_output:
+      active_lang: es
+      detected_lang: es
+      needs_review: false
+    metadata:
+      suite: multilingual
+      input_lang: es
+      first_turn: true
+      expected_reply_lang: es
+      assert_all_nine_fields: true
+      requirement: >-
+        THE SYSTEM SHALL emit the per-turn JSON contract with all nine fields
+        populated on every chat turn.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-002
+  # Requirement: THE SYSTEM SHALL set detected_lang to the ISO 639-1 code of the
+  # language the user wrote in.
+  # Scenario: clear EN question; verify detected_lang = "en".
+  # ---------------------------------------------------------------------------
+  - name: multilingual-002
+    inputs:
+      session_id: sess-ml-002
+      message: "What philosophy courses are available this semester?"
+    expected_output:
+      detected_lang: en
+      active_lang: en
+    metadata:
+      suite: multilingual
+      input_lang: en
+      first_turn: true
+      expected_reply_lang: en
+      requirement: >-
+        THE SYSTEM SHALL set detected_lang to the ISO 639-1 code of the language
+        the user wrote in.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-003
+  # Requirement: THE SYSTEM SHALL set active_lang to one of es, en, or pt on
+  # every response.
+  # Scenario: clear PT first-turn question; assert active_lang is in {es,en,pt}.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-003
+    inputs:
+      session_id: sess-ml-003
+      message: "Quais cursos de filosofia estão disponíveis neste semestre?"
+    expected_output:
+      active_lang: pt
+      needs_review: false
+    metadata:
+      suite: multilingual
+      input_lang: pt
+      first_turn: true
+      expected_reply_lang: pt
+      assert_active_lang_is_supported: true
+      requirement: >-
+        THE SYSTEM SHALL set active_lang to one of es, en, or pt on every
+        response.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-004
+  # Requirement: WHEN the first user message of a session arrives THE SYSTEM
+  # SHALL lock active_lang to the detected supported language.
+  # Scenario: first-turn ES message; assert active_lang locks to es.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-004
+    inputs:
+      session_id: sess-ml-004
+      message: "Hola, me gustaría saber más sobre el programa de filosofía de la escuela."
+    expected_output:
+      active_lang: es
+      detected_lang: es
+    metadata:
+      suite: multilingual
+      input_lang: es
+      first_turn: true
+      expected_reply_lang: es
+      requirement: >-
+        WHEN the first user message of a session arrives THE SYSTEM SHALL lock
+        active_lang to the detected supported language.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-005
+  # Requirement: WHEN a user message arrives THE SYSTEM SHALL compute
+  # lang_confidence as the agreement score between the lingua detector and the
+  # LLM detected_lang.
+  # Scenario: unambiguous ES message → detector and LLM agree → lang_confidence
+  # expected >= 0.60 (agreement gives high score per fusion.py weights).
+  # ---------------------------------------------------------------------------
+  - name: multilingual-005
+    inputs:
+      session_id: sess-ml-005
+      message: "Buenos días, quisiera inscribirme en el curso de ética aristotélica para el próximo semestre."
+    expected_output:
+      active_lang: es
+      detected_lang: es
+      needs_review: false
+    metadata:
+      suite: multilingual
+      input_lang: es
+      first_turn: true
+      expected_reply_lang: es
+      lang_confidence_min: 0.60
+      requirement: >-
+        WHEN a user message arrives THE SYSTEM SHALL compute lang_confidence as
+        the agreement score between the lingua detector and the LLM detected_lang.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-006
+  # Requirement: WHEN a user message's detected_lang differs from the locked
+  # active_lang THE SYSTEM SHALL reply in active_lang and recompute lang_confidence.
+  # Scenario: session locked to es; user writes EN; active_lang stays es; reply
+  # must be in ES (coherence); detected_lang = en; lang_confidence recomputed
+  # (disagreement → lower value).
+  # ---------------------------------------------------------------------------
+  - name: multilingual-006
+    inputs:
+      session_id: sess-ml-006
+      message: "What time does the Stoicism seminar start tomorrow?"
+      prior_active_lang: es
+    expected_output:
+      active_lang: es
+      detected_lang: en
+    metadata:
+      suite: multilingual
+      input_lang: en
+      prior_active_lang: es
+      expected_reply_lang: es
+      requirement: >-
+        WHEN a user message's detected_lang differs from the locked active_lang
+        THE SYSTEM SHALL reply in active_lang and recompute lang_confidence.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-007
+  # Requirement: WHILE a session is locked to an active_lang THE SYSTEM SHALL
+  # render every reply in that language until the session ends or an allowed
+  # switch occurs.
+  # Scenario: second ES turn on an ES-locked session; active_lang stays es; reply
+  # rendered in ES; no needs_review.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-007
+    inputs:
+      session_id: sess-ml-007
+      message: "¿Puede explicarme más sobre la teoría platónica de las formas?"
+      prior_active_lang: es
+    expected_output:
+      active_lang: es
+      needs_review: false
+    metadata:
+      suite: multilingual
+      input_lang: es
+      prior_active_lang: es
+      expected_reply_lang: es
+      requirement: >-
+        WHILE a session is locked to an active_lang THE SYSTEM SHALL render every
+        reply in that language until the session ends or an allowed switch occurs.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-008
+  # Requirement: IF the detected language is not es/en/pt AND the session is
+  # already locked to a supported active_lang THEN THE SYSTEM SHALL keep the
+  # existing active_lang AND set needs_review=true.
+  # Scenario: session locked to es; user writes German (unsupported); active_lang
+  # stays es; needs_review=true.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-008
+    inputs:
+      session_id: sess-ml-008
+      message: "Wann beginnt das nächste Philosophieseminar?"
+      prior_active_lang: es
+    expected_output:
+      active_lang: es
+      needs_review: true
+    metadata:
+      suite: multilingual
+      input_lang: de
+      unsupported_input: true
+      prior_active_lang: es
+      expected_reply_lang: es
+      requirement: >-
+        IF the detected language is not es/en/pt AND the session is already locked
+        to a supported active_lang THEN THE SYSTEM SHALL keep the existing
+        active_lang AND set needs_review=true.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-009
+  # Requirement: IF the detected language is not es/en/pt AND it is the first
+  # turn THEN THE SYSTEM SHALL set active_lang to the configured fallback (en)
+  # AND set needs_review=true.
+  # Scenario: first-turn German message (unsupported); fallback to en;
+  # needs_review=true.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-009
+    inputs:
+      session_id: sess-ml-009
+      message: "Ich möchte mich für den Philosophiekurs anmelden, bitte helfen Sie mir."
+    expected_output:
+      active_lang: en
+      needs_review: true
+    metadata:
+      suite: multilingual
+      input_lang: de
+      unsupported_input: true
+      first_turn: true
+      requirement: >-
+        IF the detected language is not es/en/pt AND it is the first turn THEN
+        THE SYSTEM SHALL set active_lang to the configured fallback (en) AND set
+        needs_review=true.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-010
+  # Requirement: IF lang_confidence is below the configured threshold THEN THE
+  # SYSTEM SHALL keep the current active_lang, ask the user to confirm their
+  # language in the reply, AND set needs_review=true.
+  # Scenario: message that mixes ES and PT vocabulary causes detector/LLM
+  # disagreement on which supported language is in use, driving lang_confidence
+  # below lang_confidence_min (0.55); session locked to es; system keeps es,
+  # asks for confirmation, sets needs_review=true.
+  # Runner note: simulate_low_confidence=true signals the runner to mock the
+  # detector so lang_confidence falls below the threshold (required for CI
+  # reproducibility; see evaluation spec).
+  # ---------------------------------------------------------------------------
+  - name: multilingual-010
+    inputs:
+      session_id: sess-ml-010
+      message: "Hasta mañana, obrigado, por favor ajude-me com o curso."
+      prior_active_lang: es
+    expected_output:
+      active_lang: es
+      needs_review: true
+    metadata:
+      suite: multilingual
+      input_lang: mixed_es_pt
+      prior_active_lang: es
+      expected_reply_lang: es
+      lang_confidence_max: 0.55
+      simulate_low_confidence: true
+      requirement: >-
+        IF lang_confidence is below the configured threshold THEN THE SYSTEM SHALL
+        keep the current active_lang, ask the user to confirm their language in
+        the reply, AND set needs_review=true.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-011
+  # Requirement: IF a user message is shorter than the configured minimum length
+  # THEN THE SYSTEM SHALL retain the current active_lang AND SHALL NOT trigger a
+  # language switch.
+  # Scenario: session locked to en; user sends "Sí" (2 chars, below
+  # min_input_chars=12); active_lang stays en despite the Spanish character.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-011
+    inputs:
+      session_id: sess-ml-011
+      message: "Sí"
+      prior_active_lang: en
+    expected_output:
+      active_lang: en
+    metadata:
+      suite: multilingual
+      input_lang: es
+      short_input: true
+      prior_active_lang: en
+      expected_reply_lang: en
+      min_input_chars: 12
+      requirement: >-
+        IF a user message is shorter than the configured minimum length THEN THE
+        SYSTEM SHALL retain the current active_lang AND SHALL NOT trigger a
+        language switch.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-012
+  # Requirement: IF language detection fails THEN THE SYSTEM SHALL fall back to
+  # the LLM detected_lang, set lang_confidence to a low value, AND set
+  # needs_review=true.
+  # Scenario: detector raises an internal error (returns DetectionResult(lang=None,
+  # confidence=0.0, is_reliable=False, error="...")); system falls back to LLM
+  # detected_lang, sets lang_confidence <= 0.35, needs_review=true.
+  # Runner note: simulate_detector_failure=true signals the runner to mock the
+  # detector's error path (see evaluation spec).
+  # ---------------------------------------------------------------------------
+  - name: multilingual-012
+    inputs:
+      session_id: sess-ml-012
+      message: "¿Cuáles son los requisitos para inscribirse en el programa de filosofía?"
+      prior_active_lang: es
+    expected_output:
+      needs_review: true
+      active_lang: es
+    metadata:
+      suite: multilingual
+      prior_active_lang: es
+      expected_reply_lang: es
+      lang_confidence_max: 0.35
+      simulate_detector_failure: true
+      requirement: >-
+        IF language detection fails THEN THE SYSTEM SHALL fall back to the LLM
+        detected_lang, set lang_confidence to a low value, AND set
+        needs_review=true.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-013
+  # Requirement: WHERE language auto-switch is enabled THE SYSTEM SHALL switch
+  # active_lang to a new supported language only after the user writes in that
+  # language for at least two consecutive turns.
+  # Scenario: lang_autoswitch=true; session locked to es; user has already written
+  # EN for one consecutive turn (pending_switch_count=1); this second EN turn
+  # reaches autoswitch_min_turns (2), triggering active_lang switch to en.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-013
+    inputs:
+      session_id: sess-ml-013
+      message: "How do I enroll in the Aristotle ethics course for next semester?"
+      prior_active_lang: es
+      lang_autoswitch: true
+      pending_switch_count: 1
+    expected_output:
+      active_lang: en
+    metadata:
+      suite: multilingual
+      input_lang: en
+      prior_active_lang: es
+      autoswitch: true
+      pending_switch_count: 1
+      expected_reply_lang: en
+      requirement: >-
+        WHERE language auto-switch is enabled THE SYSTEM SHALL switch active_lang
+        to a new supported language only after the user writes in that language
+        for at least two consecutive turns.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-014
+  # Requirement: WHERE language auto-switch is disabled THE SYSTEM SHALL keep the
+  # first-turn active_lang for the entire session regardless of later turns'
+  # detected_lang.
+  # Scenario: lang_autoswitch=false (hard lock); session locked to es; user writes
+  # EN repeatedly (pending_switch_count=1 from prior turn); active_lang must stay es.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-014
+    inputs:
+      session_id: sess-ml-014
+      message: "Can you tell me more about the Stoicism seminars offered this month?"
+      prior_active_lang: es
+      lang_autoswitch: false
+      pending_switch_count: 1
+    expected_output:
+      active_lang: es
+    metadata:
+      suite: multilingual
+      input_lang: en
+      prior_active_lang: es
+      autoswitch: false
+      pending_switch_count: 1
+      expected_reply_lang: es
+      requirement: >-
+        WHERE language auto-switch is disabled THE SYSTEM SHALL keep the
+        first-turn active_lang for the entire session regardless of later turns'
+        detected_lang.

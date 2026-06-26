@@ -20,6 +20,8 @@ interface TurnOutput {
 interface Turn {
   role: "user" | "assistant";
   content: string;
+  /** ISO 639-1 code the session is locked to — only set on assistant turns. */
+  active_lang?: string;
   needs_review?: boolean;
 }
 
@@ -63,6 +65,7 @@ export default function ChatPage() {
         {
           role: "assistant",
           content: data.reply,
+          active_lang: data.active_lang,
           needs_review: data.needs_review,
         },
       ]);
@@ -97,21 +100,39 @@ export default function ChatPage() {
             key={idx}
             style={turn.role === "user" ? css.userTurn : css.assistantTurn}
           >
-            <span style={css.roleLabel}>
-              {turn.role === "user" ? "You" : "Assistant"}
-            </span>
-            <p style={css.turnContent}>{turn.content}</p>
-            {/* needs_review: subtle hairline marker + tooltip — never a red banner */}
-            {turn.needs_review === true && (
-              <span
-                style={css.reviewMarker}
-                title="Flagged for review"
-                aria-label="Flagged for review"
-                role="img"
-              >
-                &#x2022;
+            {/* Role label + metadata chips on the same row */}
+            <div style={css.turnMeta}>
+              <span style={css.roleLabel}>
+                {turn.role === "user" ? "You" : "Assistant"}
               </span>
-            )}
+
+              {/* active_lang badge: only on assistant turns, discreet monospaced label.
+                  aria-label spells out the full description so screen readers are clear. */}
+              {turn.role === "assistant" && turn.active_lang != null && (
+                <span
+                  style={css.langBadge}
+                  title={`Session language: ${turn.active_lang.toUpperCase()}`}
+                  aria-label={`Session language locked to ${turn.active_lang.toUpperCase()}`}
+                >
+                  {turn.active_lang.toUpperCase()}
+                </span>
+              )}
+
+              {/* needs_review chip: visible text + tooltip — never a red banner.
+                  Paired with text (not color alone) to meet WCAG AA non-color cue rule. */}
+              {turn.needs_review === true && (
+                <span
+                  style={css.reviewChip}
+                  title="This turn was flagged for review (low confidence or unsupported language)"
+                  aria-label="Flagged for review"
+                  role="note"
+                >
+                  needs review
+                </span>
+              )}
+            </div>
+
+            <p style={css.turnContent}>{turn.content}</p>
           </article>
         ))}
 
@@ -199,25 +220,48 @@ const css: Record<string, React.CSSProperties> = {
   assistantTurn: {
     textAlign: "left",
   },
+  // Row that holds the role label plus metadata chips (active_lang, needs_review).
+  turnMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    marginBottom: "0.25rem",
+  },
   roleLabel: {
     fontSize: "0.7rem",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
     color: "#777",
-    display: "block",
-    marginBottom: "0.25rem",
   },
   turnContent: {
     margin: 0,
     whiteSpace: "pre-wrap",
   },
-  // Subtle bullet — not a red badge. Paired with title tooltip for non-color cue.
-  reviewMarker: {
+  // Discreet monospaced badge that mirrors the session's active_lang ("ES" / "EN" / "PT").
+  // Muted border + low-contrast text keeps it informational without drawing the eye.
+  langBadge: {
     fontSize: "0.6rem",
-    color: "#aaa",
-    marginLeft: "0.3rem",
-    verticalAlign: "super",
+    fontFamily: "ui-monospace, 'Courier New', monospace",
+    letterSpacing: "0.06em",
+    color: "#999",
+    border: "1px solid #ddd",
+    borderRadius: "3px",
+    padding: "0.05rem 0.3rem",
+    lineHeight: 1,
+    cursor: "default",
+  },
+  // Subtle "needs review" chip — not a red banner.
+  // Text label + tooltip satisfies WCAG non-color cue requirement (text alone conveys meaning).
+  reviewChip: {
+    fontSize: "0.6rem",
+    letterSpacing: "0.04em",
+    color: "#999",
+    border: "1px solid #e0ddd8",
+    borderRadius: "3px",
+    padding: "0.05rem 0.3rem",
+    lineHeight: 1,
     cursor: "help",
+    fontStyle: "italic",
   },
   muted: {
     color: "#888",

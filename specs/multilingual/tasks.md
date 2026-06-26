@@ -25,15 +25,15 @@ via `/implement multilingual`.
 
 - [x] 9. Wire the `POST /chat` FastAPI boundary: detect → `resolve_active_lang` → build `AgentDeps(active_lang, detection)` → `orchestrator.run(..., UsageLimits)` → persist session + messages → return `TurnOutput`; catch `ModelHTTPError|UnexpectedModelBehavior|UsageLimitExceeded` → `degraded_turn(active_lang)` with `needs_review=true` (never a 500). — _req: multilingual-001, multilingual-004, multilingual-008, multilingual-009 — owner: backend-engineer_
 
-- [ ] 10. Instrument observability: Logfire span around the detector call (one trace per turn) and a metadata-only PostHog `turn_completed` event (`active_lang`, `detected_lang`, `lang_confidence`, `needs_review` — no message content). — _req: multilingual-001, multilingual-005 — owner: observability-engineer_
+- [x] 10. Instrument observability: Logfire span around the detector call (one trace per turn) and a metadata-only PostHog `turn_completed` event (`active_lang`, `detected_lang`, `lang_confidence`, `needs_review` — no message content). — _req: multilingual-001, multilingual-005 — owner: observability-engineer_
 
 - [ ] 11. Implement the flag-gated auto-switch (Tier-3): behind `lang_autoswitch`, count consecutive turns in a new supported language and switch `active_lang` at `autoswitch_min_turns`; default off keeps the hard lock. — _req: multilingual-013, multilingual-014 — owner: backend-engineer_
 
-- [ ] 12. Add eval Cases `multilingual-001..014` to the `backend/evals/datasets/multilingual.yaml` dataset (happy ES/EN/PT, coherence/switch, unsupported→fallback, short-input, low-confidence/disagreement, detector-failure) with evaluators for language fidelity and the `needs_review`/`active_lang` assertions, so `/verify` runs them. — _req: multilingual-001..multilingual-014 — owner: eval-engineer_
+- [x] 12. Add eval Cases `multilingual-001..014` to the `backend/evals/datasets/multilingual.yaml` dataset (happy ES/EN/PT, coherence/switch, unsupported→fallback, short-input, low-confidence/disagreement, detector-failure) with evaluators for language fidelity and the `needs_review`/`active_lang` assertions, so `/verify` runs them. — _req: multilingual-001..multilingual-014 — owner: eval-engineer_
 
 - [ ] 13. Add unit tests for the deterministic units (`LanguageDetector`, `compute_lang_confidence`, `resolve_active_lang` state machine incl. lock/switch/fallback/short-input) and an integration test for the `/chat` boundary degrade path. — _req: multilingual-002..multilingual-014 — owner: backend-engineer_
 
-- [ ] 14. (Frontend, deferrable) Mirror `active_lang` and surface `needs_review` subtly in the chat UI when the chat surface exists. — _req: multilingual-001 — owner: frontend-engineer_
+- [x] 14. (Frontend, deferrable) Mirror `active_lang` and surface `needs_review` subtly in the chat UI when the chat surface exists. — _req: multilingual-001 — owner: frontend-engineer_
 
 ## Coverage
 
