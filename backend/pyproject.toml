@@ -43,7 +43,44 @@ target-version = "py312"
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade,
 # ASYNC async-lints, SIM flake8-simplify, RUF ruff-native rules.
-select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
+# C901: mccabe cyclomatic complexity gate — blocks future deeply-nested functions.
+# PLR0912/PLR0913/PLR0915: pylint-refactor rules for branches/args/statements — block
+# future "god function" growth like the 242-line chat() monolith we refactored.
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM", "RUF", "C901", "PLR0912", "PLR0913", "PLR0915"]
+
+# ---------------------------------------------------------------------------
+# Function-complexity / size thresholds
+# Calibrated to the current post-refactor codebase so `ruff check` is green
+# on clean code while still failing a future 200-line / deeply-nested function.
+# To change a threshold: document the function that forced the bump + line count.
+# ---------------------------------------------------------------------------
+
+[tool.ruff.lint.mccabe]
+# Default ruff max is 10; 12 gives moderate headroom while still blocking
+# deeply-nested logic. No current function exceeds complexity 10 — verified via
+# `ruff check --select C901 --config lint.mccabe.max-complexity=10 .` → clean.
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+# max-args bumped from default 5 → 10 to accommodate three post-refactor helpers
+# in app/api/chat.py that split the 242-line chat() monolith:
+#   _run_orchestrator_turn (10 kw-only args after *) — the binding constraint
+#   _blocked_turn          ( 8 kw-only args after *)
+#   _build_agent_deps      ( 7 positional args)
+# All use keyword-only args (*, arg) which is good practice but still counted by
+# PLR0913. Raising above 10 would need fresh justification.
+max-args = 10
+
+# max-branches at ruff default (12). No current function exceeds this.
+max-branches = 12
+
+# max-statements bumped from default 50 → 66 to accommodate evals/run.py
+# _compute_metrics() (66 statements). It is a dense but LINEAR metrics-aggregation
+# function (no deep nesting). A future function with 67+ statements still fails.
+max-statements = 66
+
+# max-returns at ruff default (6). No current function exceeds this.
+max-returns = 6
 
 [tool.mypy]
 python_version = "3.12"
