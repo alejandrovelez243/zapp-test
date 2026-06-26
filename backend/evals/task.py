@@ -30,8 +30,7 @@ from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.refusal import safe_refusal
-from app.lang.detector import LanguageDetector
-from app.lang.state import resolve_active_lang
+from app.lang.pipeline import LanguagePipeline
 
 
 def _now_utc() -> datetime:
@@ -85,8 +84,12 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     prior_active_lang: str | None = inputs.get("prior_active_lang")
     session_id: str = inputs.get("session_id") or str(uuid.uuid4())
 
+    # Settings resolved once per turn; shared by LanguagePipeline and GuardrailEngine.
+    settings = get_settings()
+
     # Step 1 — Deterministic language detection (lingua; never raises per multilingual-012).
-    det = LanguageDetector().detect(message)
+    pipeline = LanguagePipeline(settings)
+    det = pipeline.detect(message)
 
     # Step 2 — Transient ConversationSession (no DB writes; evals never persist state).
     #   created_at / updated_at follow the project's naive-UTC convention.
@@ -99,8 +102,7 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Step 3 — Pure language-state machine: derives the active_lang for this turn.
-    settings = get_settings()
-    decision = resolve_active_lang(session, det, settings)
+    decision = pipeline.resolve(session, det)
 
     # Step 3b — Input guardrails (mirror the /chat boundary). A block short-circuits the
     #   turn WITHOUT a model call; redact forwards a cleaned message; flag carries names.

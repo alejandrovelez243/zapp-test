@@ -54,8 +54,7 @@ from app.deps import AgentDeps
 from app.eval.runtime import evaluate_conversation, is_goodbye
 from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
-from app.lang.detector import LanguageDetector
-from app.lang.state import resolve_active_lang
+from app.lang.pipeline import LanguagePipeline
 from app.observability import get_posthog
 
 log = logging.getLogger(__name__)
@@ -115,11 +114,9 @@ async def chat(
         # 1. Deterministic language detection (pre-agent, no LLM round-trip).
         #    The inner span makes the detector call individually latency-attributable.
         #    req: multilingual-002
+        pipeline = LanguagePipeline(settings)
         with logfire.span("language.detect"):
-            det = LanguageDetector(
-                supported=settings.supported,
-                min_input_chars=settings.min_input_chars,
-            ).detect(req.message)
+            det = pipeline.detect(req.message)
 
         # 2. Load or create the ConversationSession row.
         #    req: multilingual-007
@@ -128,7 +125,7 @@ async def chat(
 
         # 3. Decide active_lang via the state machine (pure, no I/O).
         #    req: multilingual-003, multilingual-004, multilingual-008, multilingual-009
-        decision = resolve_active_lang(session, det, settings)
+        decision = pipeline.resolve(session, det)
 
         # 4. Request IP — safe fallback for reverse proxies or test clients without a
         #    real remote address.
