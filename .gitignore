@@ -1,0 +1,31 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+.vercel/
+
+# Observability / local data
+*.log
+.logfire/
+
+# Eval outputs (keep the committed example report)
+evals/reports/*
+!evals/reports/example-report.md
+
+# OS / editor
+.DS_Store
