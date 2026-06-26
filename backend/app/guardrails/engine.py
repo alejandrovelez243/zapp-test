@@ -203,6 +203,15 @@ async def run_input_guardrails(
         lambda: detect_toxicity(message, active_lang),
         triggered,
     )
+    # req: guardrails-010 — secret-shaped content in the INPUT (a pasted API key, gateway
+    # key, admin token, or system-prompt fragment) → block, mirroring the output-side
+    # secret_leak guardrail. Treating it as input-side too lets a user who pastes a secret
+    # be stopped before the model sees it, and makes the adversarial secret_leak cases trip.
+    is_secret: bool = _detect_safe(
+        "secret_leak",
+        lambda: detect_secret_leak(message),
+        triggered,
+    )
 
     # ------------------------------------------------------------------ #
     # Non-critical detectors — called directly (they never raise by contract)
@@ -245,9 +254,9 @@ async def run_input_guardrails(
     # Per-category policy: block > redact > flag > clean
     # ------------------------------------------------------------------ #
 
-    if is_injection or is_jailbreak or is_toxic:
+    if is_injection or is_jailbreak or is_toxic or is_secret:
         # Security-critical hit (or fail-safe error) → block the turn.
-        # req: guardrails-003, guardrails-004, guardrails-005, guardrails-019
+        # req: guardrails-003, guardrails-004, guardrails-005, guardrails-010, guardrails-019
         return GuardrailResult(
             triggered=triggered,
             action="block",

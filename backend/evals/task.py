@@ -26,7 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.orchestrator import get_orchestrator
 from app.agents.session import ConversationSession
 from app.config import get_settings
+from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
+from app.guardrails.engine import run_input_guardrails, run_output_guardrails
+from app.guardrails.refusal import safe_refusal
 from app.lang.detector import LanguageDetector
 from app.lang.state import resolve_active_lang
 
@@ -96,7 +99,31 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Step 3 — Pure language-state machine: derives the active_lang for this turn.
-    decision = resolve_active_lang(session, det, get_settings())
+    settings = get_settings()
+    decision = resolve_active_lang(session, det, settings)
+
+    # Step 3b — Input guardrails (mirror the /chat boundary). A block short-circuits the
+    #   turn WITHOUT a model call; redact forwards a cleaned message; flag carries names.
+    gr_in = await run_input_guardrails(message, decision.active_lang, settings)
+    if gr_in.blocked:
+        primary_in = gr_in.triggered[0] if gr_in.triggered else "default"
+        blocked = TurnOutput(
+            reply=safe_refusal(decision.active_lang, primary_in),
+            detected_lang=det.lang or decision.active_lang,
+            active_lang=decision.active_lang,
+            lang_confidence=0.0,
+            final_normalized_text="",
+            detected_country=None,
+            confidence_score=0.0,
+            needs_review=True,
+            guardrails=GuardrailReport(input=gr_in.triggered),
+        )
+        blocked_out: dict[str, Any] = blocked.model_dump()
+        blocked_out["_usage"] = {"input_tokens": 0, "output_tokens": 0}
+        return blocked_out
+
+    # The (possibly PII-redacted) message forwarded to the agent.
+    agent_message: str = gr_in.text
 
     # Step 4 — Build AgentDeps.
     #   ``session=None`` is intentional: the orchestrator has no DB tool in this release,
@@ -125,12 +152,24 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
         #   When PYDANTIC_AI_GATEWAY_API_KEY is set, a real gateway call is made.
         #   In CI, override the model before calling run_turn:
         #     with get_orchestrator().override(model=TestModel(...)): ...
-        result = await get_orchestrator().run(message, deps=deps, usage=usage)
+        result = await get_orchestrator().run(agent_message, deps=deps, usage=usage)
 
-        # Step 7 — Serialise the nine-field contract and attach private usage metadata.
+        # Step 7 — Output guardrails (mirror /chat): block/redact the reply, then populate
+        #   the guardrails contract field + needs_review from both input and output hits.
+        turn = result.output
+        gr_out = run_output_guardrails(turn.reply, settings)
+        if gr_out.blocked:
+            primary_out = gr_out.triggered[0] if gr_out.triggered else "default"
+            turn.reply = safe_refusal(turn.active_lang, primary_out)
+        elif gr_out.action == "redact":
+            turn.reply = gr_out.text
+        turn.guardrails = GuardrailReport(input=gr_in.triggered, output=gr_out.triggered)
+        turn.needs_review = turn.needs_review or bool(gr_in.triggered or gr_out.triggered)
+
+        # Step 8 — Serialise the nine-field contract and attach private usage metadata.
         #   The ``_usage`` key is not part of the TurnOutput schema; evaluators read it
         #   from the returned dict to compute cost and latency.
-        out: dict[str, Any] = result.output.model_dump()
+        out: dict[str, Any] = turn.model_dump()
         out["_usage"] = {
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,

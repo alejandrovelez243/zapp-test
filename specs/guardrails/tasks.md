@@ -29,7 +29,7 @@ wiring. Drive task-by-task via `/implement guardrails`.
 
 - [x] 9. Add tests: `detectors` (each category incl. ES/EN/PT positives + benign negatives, PII redaction, secret detection), `engine` (block/redact/flag actions + fail-safe on detector error + `guardrails_enabled=false` skip), and the `/chat` boundary (injection→block+refusal+no model call; PII→redact+continue; output secret_leak→block; clean→empty guardrails; names match labels) via TestModel + aiosqlite. — _req: guardrails-001..guardrails-016, guardrails-019 — owner: backend-engineer_
 
-- [ ] 10. Eval verification: run the eval suite so guardrail precision/recall now compute and meet the (un-deferred) thresholds; tune thresholds/datasets if the deterministic core under/over-fires. (The real run needs `PYDANTIC_AI_GATEWAY_API_KEY`; the GuardrailHit logic is unit-verifiable without it.) — _req: guardrails-018 — owner: eval-engineer_
+- [x] 10. Eval verification: run the eval suite so guardrail precision/recall now compute and meet the (un-deferred) thresholds; tune thresholds/datasets if the deterministic core under/over-fires. (The real run needs `PYDANTIC_AI_GATEWAY_API_KEY`; the GuardrailHit logic is unit-verifiable without it.) — _req: guardrails-018 — owner: eval-engineer_
 
 ## Coverage
 
