@@ -17,9 +17,16 @@ RUN corepack enable
 WORKDIR /app
 
 # --- Dependency layer ---------------------------------------------------------
-# Copy ONLY the manifests first so this layer is cached on (package.json,
-# pnpm-lock.yaml) and survives source edits.
-COPY package.json pnpm-lock.yaml ./
+# Copy manifests first so this layer is cached on manifest changes and survives
+# source edits.
+#
+# pnpm-workspace.yaml MUST be copied alongside package.json + pnpm-lock.yaml:
+#   - pnpm 11 hard-errors (ERR_PNPM_IGNORED_BUILDS) on un-approved build scripts
+#     in non-interactive mode. The workspace file carries `onlyBuiltDependencies`
+#     (sharp, unrs-resolver). Without it pnpm never sees the approval and exits 1.
+#   - `"pnpm": {"onlyBuiltDependencies": [...]}` in package.json is the
+#     belt-and-suspenders guarantee regardless of workspace resolution order.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # --- Application layer + production build -------------------------------------

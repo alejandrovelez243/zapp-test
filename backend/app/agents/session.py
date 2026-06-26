@@ -24,12 +24,15 @@ from sqlmodel import Field, SQLModel
 
 
 def _now_utc() -> datetime:
-    """Return the current UTC time (timezone-aware).
+    """Return the current UTC time as a NAIVE datetime (no tzinfo).
 
-    Used as the ``default_factory`` for timestamp columns so mypy-strict sees a
-    concrete return type rather than an untyped lambda.
+    Project convention: timestamps are stored naive-UTC to match the
+    ``TIMESTAMP WITHOUT TIME ZONE`` columns. asyncpg rejects timezone-aware
+    datetimes for those columns ("can't subtract offset-naive and offset-aware"),
+    so we strip the tzinfo here. (SQLite, used in tests, is lenient and did not
+    surface this — Postgres is strict.)
     """
-    return datetime.now(UTC)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class ConversationSession(SQLModel, table=True):
