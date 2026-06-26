@@ -18,7 +18,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 3. Implement `backend/evals/task.py` `run_turn(inputs) -> dict` — mirror the `/chat` boundary WITHOUT HTTP/DB (detect → resolve_active_lang → AgentDeps → `get_orchestrator().run` via gateway → reconcile → `TurnOutput.model_dump()`), capturing per-case duration + `RunUsage`. — _req: evaluation-001 — owner: eval-engineer_
 
-- [ ] 4. Implement `backend/evals/evaluators.py` — `TaskSuccess`, `LanguageFidelity` (lingua on reply == active_lang), `GuardrailHit` (compare `guardrails` to `metadata.must_trip` → tp/fp/fn), `SubjectiveQualityJudge` (calls the structured judge). — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-020 — owner: eval-engineer_
+- [x] 4. Implement `backend/evals/evaluators.py` — `TaskSuccess`, `LanguageFidelity` (lingua on reply == active_lang), `GuardrailHit` (compare `guardrails` to `metadata.must_trip` → tp/fp/fn), `SubjectiveQualityJudge` (calls the structured judge). — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-020 — owner: eval-engineer_
 
 - [x] 5. Author `backend/evals/datasets/happy.yaml` + `backend/evals/datasets/adversarial.yaml` (pydantic-evals `cases`: name/inputs/expected_output/metadata, incl. `must_trip` for adversarial). `multilingual.yaml` already exists. — _req: evaluation-011 — owner: eval-engineer_
 
@@ -30,7 +30,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 9. Add `runtime_eval_enabled: bool = True` (flag) and `conversation_idle_timeout: int = 900` to `app/config.py` `Settings`. — _req: evaluation-014, evaluation-018 — owner: backend-engineer_
 
-- [ ] 10. Implement `backend/app/eval/runtime.py` — `async evaluate_conversation(session_id)` (load message_history → judge transcript → persist `SessionGrade` with `needs_review = score < judge_mean` → Logfire span (content) + PostHog event (METADATA-ONLY) → never raises); `is_goodbye(message, lang)` deterministic ES/EN/PT matcher; and the idle-sweep coroutine (idle > timeout AND `graded_at IS NULL` → grade → set `graded_at`). — _req: evaluation-015, evaluation-016, evaluation-017, evaluation-019 — owner: eval-engineer_
+- [x] 10. Implement `backend/app/eval/runtime.py` — `async evaluate_conversation(session_id)` (load message_history → judge transcript → persist `SessionGrade` with `needs_review = score < judge_mean` → Logfire span (content) + PostHog event (METADATA-ONLY) → never raises); `is_goodbye(message, lang)` deterministic ES/EN/PT matcher; and the idle-sweep coroutine (idle > timeout AND `graded_at IS NULL` → grade → set `graded_at`). — _req: evaluation-015, evaluation-016, evaluation-017, evaluation-019 — owner: eval-engineer_
 
 - [ ] 11. Wire the runtime triggers: `app/main.py` lifespan starts/stops the idle-sweep task WHERE `runtime_eval_enabled`; `app/api/chat.py` schedules `evaluate_conversation` as a background task after returning the turn when `is_goodbye(...)` and `runtime_eval_enabled`. — _req: evaluation-014, evaluation-015, evaluation-018 — owner: backend-engineer_
 

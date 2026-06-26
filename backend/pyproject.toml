@@ -61,6 +61,15 @@ module = [
 ]
 ignore_missing_imports = true
 
+# evals.* is a sibling local package (backend/evals/) consumed by app/eval/runtime.py.
+# It is not in mypy `files` scope and may import untyped libraries (pydantic_evals).
+# Using ignore_missing_imports + follow_imports=silent keeps mypy green without
+# polluting app/ source files with per-line ignores.
+[[tool.mypy.overrides]]
+module = ["evals.*"]
+ignore_missing_imports = true
+follow_imports = "silent"
+
 [tool.logfire]
 ignore_no_config = true
 
