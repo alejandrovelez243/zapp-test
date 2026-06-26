@@ -11,6 +11,7 @@ dependencies = [
     "logfire>=4.37.0",
     "pgvector>=0.4.2",
     "posthog>=7.20.5",
+    "psycopg2-binary>=2.9.12",
     "pycountry>=26.2.16",
     "pydantic-ai>=2.0.0",
     "pydantic-ai-guardrails[evals,telemetry]>=0.2.2",
