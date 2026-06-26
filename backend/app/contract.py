@@ -22,27 +22,31 @@ class GuardrailReport(BaseModel):
 
 
 class TurnOutput(BaseModel):
+    # Only `reply` is required of the model. The other fields carry safe defaults so
+    # the LLM may omit the ones it is instructed not to set (active_lang / lang_confidence
+    # are reconciled by the output_validator). Without defaults, an omitted required field
+    # triggers a schema ModelRetry loop ("Field required") that exhausts the retry budget.
     reply: str = Field(..., description="User-facing answer, in active_lang")
     detected_lang: str = Field(
-        ..., min_length=2, max_length=2, description="ISO 639-1 the user wrote in"
+        default="en", min_length=2, max_length=2, description="ISO 639-1 the user wrote in"
     )
     active_lang: str = Field(
-        ...,
+        default="en",
         min_length=2,
         max_length=2,
-        description="Language the session is locked to (es|en|pt or fallback)",
+        description="Language the session is locked to (es|en|pt or fallback); validator-owned",
     )
     lang_confidence: float = Field(
-        ..., ge=0.0, le=1.0, description="Agreement score: LLM detected_lang vs lingua detector"
+        default=0.0, ge=0.0, le=1.0, description="Agreement score (validator-owned)"
     )
     final_normalized_text: str = Field(
-        ..., description="LLM-cleaned user text fused with resolved locale"
+        default="", description="LLM-cleaned user text fused with resolved locale"
     )
     detected_country: CountryAlpha2 | None = Field(
         default=None, description="Fused geo-IP signal (ISO 3166-1 alpha-2)"
     )
     confidence_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Combined reconciliation confidence"
+        default=0.0, ge=0.0, le=1.0, description="Combined reconciliation confidence"
     )
     needs_review: bool = Field(
         default=False, description="True on low confidence / divergence / caught errors"
