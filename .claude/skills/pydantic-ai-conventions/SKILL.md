@@ -3,9 +3,11 @@ name: pydantic-ai-conventions
 description: Use when writing PydanticAI agents, tools, orchestration, guardrails, resilience, or memory for the backend
 ---
 
-# PydanticAI Conventions (2026, pydantic-ai v1.x)
+# PydanticAI Conventions (2026, pydantic-ai 2.0)
 
 Canonical patterns for the Philosophy School backend. PydanticAI ONLY (Google ADK is rejected; only A2A as separate HTTP services). Every turn emits the per-turn JSON contract via a typed `output_type`. Keep code typed, inject deps, never use globals.
+
+> **pydantic-ai 2.0** — pinned `pydantic-ai == 2.0.0` (`backend/uv.lock`); verified against the installed venv + Context7 (v2.0). The ONE breaking delta that affects this skill is the **Hooks API**: in 2.0 `Hooks` lives in `pydantic_ai.capabilities` (top-level `from pydantic_ai import Hooks` is gone), attaches to an `Agent` via the new `capabilities=[...]` kwarg, the error-hook decorator is `@hooks.on.model_request_error` (not `on_model_request_error`), and hook functions receive `(ctx: RunContext, request_context: ModelRequestContext)` and return the context — see §7. Everything else here is unchanged from v1.x in 2.0: `instructions=`/`system_prompt=`, `deps_type`+`RunContext`, `output_type`+`@agent.output_validator` with the `ctx.partial_output` guard, `@agent.tool`, `message_history=` + `result.all_messages()`/`result.new_messages()`, `RunUsage`/`UsageLimits` + `usage=ctx.usage`, `FallbackModel` (`pydantic_ai.models.fallback`), the exception classes (`pydantic_ai.exceptions`, now also re-exported top-level), and `logfire.instrument_pydantic_ai()`.
 
 ## 1. Agent construction: typed form + model id in ONE config
 
@@ -142,21 +144,28 @@ except (ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded) as e:
 
 There is NO core `guardrails=[...]` Agent arg. Two layers:
 
-Native **Capabilities/Hooks** interception — ordering matters: before-hooks fire in registration order, after-hooks reversed, wrap-hooks nest.
+Native **Capabilities/Hooks** interception — in 2.0 `Hooks` lives in `pydantic_ai.capabilities` and is attached to the agent via the `capabilities=[...]` kwarg (the v1.x top-level `from pydantic_ai import Hooks` is gone). Ordering matters: before-hooks fire in registration order, after-hooks reversed, wrap-hooks nest (first hook = outermost).
 
 ```python
-from pydantic_ai import Hooks
+from pydantic_ai import Agent, ModelRequestContext, RunContext
+from pydantic_ai.capabilities import Hooks
 
 hooks = Hooks()
 
 @hooks.on.before_model_request          # inbound PII redaction before the model sees text
-async def redact(ctx): ...
+async def redact(ctx: RunContext, request_context: ModelRequestContext) -> ModelRequestContext:
+    ...
+    return request_context
 
 @hooks.on.before_tool_execute           # gate the destructive enroll action
-async def confirm_enroll(ctx): ...
+async def confirm_enroll(ctx: RunContext, **kw): ...
 
-@hooks.on.on_model_request_error        # trigger fallback / mark needs_review
-async def on_error(ctx): ...
+@hooks.on.model_request_error           # 2.0 decorator name (NOT on_model_request_error)
+async def on_error(ctx: RunContext, **kw): ...
+
+# attach hooks to the agent — capabilities=[...] is the 2.0 wiring point
+orchestrator = Agent(ORCHESTRATOR_MODEL, deps_type=AgentDeps,
+                     output_type=TurnOutput, capabilities=[hooks])
 ```
 
 Measurable PII/injection/toxicity/secret-redaction = THIRD-PARTY `pydantic-ai-guardrails` (v0.2.x) `GuardedAgent`. Install extras `[telemetry]` (then `configure_telemetry(enabled=True)` for Logfire spans) and `[evals]` (pydantic-evals integration).
@@ -228,7 +237,7 @@ async def make_ics(ctx: RunContext[AgentDeps], event_id: str, email: str) -> str
 - Output validators run on streaming partials — `if ctx.partial_output: return output` FIRST.
 - Forward `usage=ctx.usage` to EVERY sub-agent run, or cost is wrong and `UsageLimits` breaks.
 - `FallbackModel` only rescues retryable errors, NOT a structurally-bad 200 — pair with output validators.
-- There is NO `guardrails=[...]` Agent arg; native = Hooks, measurable = `pydantic-ai-guardrails` GuardedAgent.
+- There is NO `guardrails=[...]` Agent arg; native = Hooks from `pydantic_ai.capabilities` attached via `capabilities=[...]` (2.0), measurable = `pydantic-ai-guardrails` GuardedAgent.
 - Hook ordering: before = registration order, after = reversed, wrap = nested.
 - Document ingestion is a BACKGROUND job, never inline in the request; treat ingested docs as immutable.
 - Low/empty retrieval -> lower `confidence_score` + `needs_review=true`, never invent an answer.
