@@ -55,8 +55,17 @@ class Settings(BaseSettings):
     judge_model: str = "anthropic:claude-haiku-4-6"
 
     # --- Language policy (consumed by later features) ---
+    # req: multilingual-003 — supported language set and fallback
     supported: tuple[str, ...] = ("es", "en", "pt")
     fallback_lang: str = "en"
+    # req: multilingual-011 — minimum detector confidence to trust a detection
+    lang_confidence_min: float = 0.55
+    # req: multilingual-011 — inputs shorter than this are too short to detect reliably
+    min_input_chars: int = 12
+    # req: multilingual-009 — consecutive turns required before auto-switch fires
+    autoswitch_min_turns: int = 2
+    # req: multilingual-009 — Tier-3 flag; default off keeps the hard session lock
+    lang_autoswitch: bool = False
 
 
 @lru_cache

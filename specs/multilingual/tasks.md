@@ -9,13 +9,13 @@ via `/implement multilingual`.
 
 - [x] 1. Add the deterministic language-detector dependency via `uv add lingua-language-detector` (never hand-edit `pyproject.toml`); refresh `uv.lock`. — _req: multilingual-002 — owner: devops-engineer_
 
-- [ ] 2. Add `LanguageConfig` to the single config module: `supported=("es","en","pt")`, `fallback_lang="en"`, `lang_confidence_min=0.55`, `min_input_chars=12`, `autoswitch_min_turns=2`, and the `lang_autoswitch` flag (default `False`). — _req: multilingual-003, multilingual-009, multilingual-011 — owner: backend-engineer_
+- [x] 2. Add `LanguageConfig` to the single config module: `supported=("es","en","pt")`, `fallback_lang="en"`, `lang_confidence_min=0.55`, `min_input_chars=12`, `autoswitch_min_turns=2`, and the `lang_autoswitch` flag (default `False`). — _req: multilingual-003, multilingual-009, multilingual-011 — owner: backend-engineer_
 
-- [ ] 3. Implement `DetectionResult` + `LanguageDetector` (lingua wrapper over a bounded language set): returns top language + confidence, sets `is_reliable=False` for input shorter than `min_input_chars`, and NEVER raises — on any error returns `DetectionResult(lang=None, confidence=0.0, is_reliable=False, error=...)`. — _req: multilingual-002, multilingual-011, multilingual-012 — owner: backend-engineer_
+- [x] 3. Implement `DetectionResult` + `LanguageDetector` (lingua wrapper over a bounded language set): returns top language + confidence, sets `is_reliable=False` for input shorter than `min_input_chars`, and NEVER raises — on any error returns `DetectionResult(lang=None, confidence=0.0, is_reliable=False, error=...)`. — _req: multilingual-002, multilingual-011, multilingual-012 — owner: backend-engineer_
 
 - [ ] 4. Implement `compute_lang_confidence(llm_lang, det)` agreement score in `app/lang/fusion.py` (agreement→high, disagreement→low, detector-unreliable→weight LLM, detector-failed→low). — _req: multilingual-005 — owner: backend-engineer_
 
-- [ ] 5. Add the `ConversationSession` SQLModel (`active_lang`, `last_supported_lang`, `pending_switch_lang`, `pending_switch_count`) and the Alembic migration creating the table. — _req: multilingual-007 — owner: backend-engineer_
+- [x] 5. Add the `ConversationSession` SQLModel (`active_lang`, `last_supported_lang`, `pending_switch_lang`, `pending_switch_count`) and the Alembic migration creating the table. — _req: multilingual-007 — owner: backend-engineer_
 
 - [ ] 6. Implement `resolve_active_lang(session, det, config)` state machine: first-turn lock to supported language; unsupported first turn → `fallback_lang` + `fallback_used`; locked session → keep `active_lang`; unsupported on locked session → keep + needs_review reason; short input → no switch. — _req: multilingual-003, multilingual-004, multilingual-008, multilingual-009, multilingual-011, multilingual-014 — owner: backend-engineer_
 
