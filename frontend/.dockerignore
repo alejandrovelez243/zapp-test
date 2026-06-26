@@ -1,0 +1,15 @@
+# Docker reads the .dockerignore of the build CONTEXT (./frontend), so this file
+# governs the frontend image build. The frontend Dockerfile does `COPY . .`, so
+# excluding these is what keeps the host node_modules / build output / secrets out
+# of the image. (*.md is intentionally NOT ignored.)
+
+.venv
+node_modules
+.next
+.git
+__pycache__
+*.pyc
+.env
+.ruff_cache
+.pytest_cache
+.mypy_cache

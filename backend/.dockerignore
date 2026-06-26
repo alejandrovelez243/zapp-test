@@ -1,0 +1,15 @@
+# Docker reads the .dockerignore of the build CONTEXT (./backend), so this file
+# governs the backend image build. Keep host-only artifacts out of the context:
+# they bloat the build, bust layer caches, and could leak local state (.env).
+# (*.md is intentionally NOT ignored — the harmless alembic README stays.)
+
+.venv
+node_modules
+.next
+.git
+__pycache__
+*.pyc
+.env
+.ruff_cache
+.pytest_cache
+.mypy_cache
