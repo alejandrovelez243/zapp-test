@@ -118,8 +118,9 @@ never raises to the user.
 
 The system degrades, it does not crash. A turn always returns a valid contract object.
 
-- **Timeouts:** every model and HTTP call is bounded (`AnthropicModelSettings(timeout=...)`;
-  `httpx` timeouts on geo-IP / REST Countries).
+- **Timeouts:** every model and HTTP call is bounded (per-provider model settings, e.g.
+  `AnthropicModelSettings(timeout=...)` / `OpenAIModelSettings(timeout=...)`; `httpx` timeouts
+  on geo-IP / REST Countries).
 - **Fallback model:** `FallbackModel(primary, secondary)` for retryable API errors.
   FallbackModel will NOT rescue a structurally-bad 200 — it is always paired with output validators.
 - **Retries cap:** `Agent(retries=2)` and `@agent.tool(retries=2)`; `ModelRetry` for self-correction.
@@ -174,8 +175,11 @@ eval scores and per-turn contract fields also feed PostHog dashboards.
 - **Observability:** Logfire (backend + LLM tracing/cost/latency, PII-scrubbed) and PostHog (product
   analytics, session replay, feature flags, metadata-only for student messages). Pick one region
   (US or EU) consistently across both.
-- **LLM provider:** Anthropic (`anthropic:<model-id>`); model ids in ONE config module, confirmed at
-  integration.
+- **LLM provider:** any PydanticAI-supported provider, selected by the model-string prefix
+  (`anthropic:` / `openai:` / `google-gla:` / `groq:` / `mistral:` / …). Model strings live in
+  ONE config module; the API key for whichever provider you use is read from env (e.g.
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). No single provider is required or
+  mandated. Model ids are confirmed at integration.
 
 ## 8. SDD Workflow & Specs-Before-Code
 

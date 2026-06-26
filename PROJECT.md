@@ -149,7 +149,7 @@ manifests and lockfiles are never hand-edited, and images install frozen.**
 
 | Env var | Where | Secret? | Notes |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | Railway api | yes | Production agent + judge provider. |
+| `<PROVIDER>_API_KEY` (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) | Railway api | yes | One required — the API key for whichever provider your model strings use (PydanticAI reads it from env). |
 | `DATABASE_URL` | Railway api | yes | Postgres+pgvector; reference the pgvector service var. |
 | `ADMIN_TOKEN` | Railway api | yes | Guards doc/event management endpoints. |
 | `LOGFIRE_TOKEN` | Railway api | yes | Backend + LLM tracing; region must match PostHog. |

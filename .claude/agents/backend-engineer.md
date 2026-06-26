@@ -75,7 +75,7 @@ Implement this as a Pydantic model `TurnOutput` and use it as the agent `output_
 - Reserve **pydantic-graph** ONLY for the human-in-the-loop enroll confirmation flow. Do not graph-ify ordinary routing.
 
 ### Resilience and the FastAPI boundary
-- Wrap the production model in `FallbackModel(primary, secondary)` for retryable API errors; set `AnthropicModelSettings(timeout=...)`. Use `Agent(retries=...)` and `@agent.tool(retries=2)`; raise `ModelRetry` for self-correction.
+- Wrap the production model in `FallbackModel(primary, secondary)` for retryable API errors; set per-provider model settings (e.g. `AnthropicModelSettings(timeout=...)` / `OpenAIModelSettings(timeout=...)`). Use `Agent(retries=...)` and `@agent.tool(retries=2)`; raise `ModelRetry` for self-correction.
 - At the FastAPI boundary, catch `ModelHTTPError`, `UnexpectedModelBehavior`, and `UsageLimitExceeded`. On any of these, **degrade gracefully**: return a valid `TurnOutput` with `needs_review=true`, a safe `reply` in `active_lang`, and a low `confidence_score`. Never let a 500 escape the chat endpoint.
 
 ### Guardrails (two layers — implement both)
@@ -118,7 +118,7 @@ Implement this as a Pydantic model `TurnOutput` and use it as the agent `output_
 - Every migration that touches vectors must run `CREATE EXTENSION IF NOT EXISTS vector` before creating vector columns/indexes. Migrations are forward-only and idempotent where possible. `preDeployCommand` runs `uv run alembic upgrade head`.
 
 ### Config, style, and quality
-- **All model ids live in ONE config module** (Pydantic `BaseSettings`). `claude-sonnet-4-6` / `claude-opus-4-6` etc. are placeholders that churn — never hardcode them elsewhere; confirm the exact id at integration time. Read all secrets (`ANTHROPIC_API_KEY`, DB URL, geo/PostHog keys) from env via settings.
+- **All model ids live in ONE config module** (Pydantic `BaseSettings`). `claude-sonnet-4-6` / `claude-opus-4-6` etc. are placeholders that churn — never hardcode them elsewhere; confirm the exact id at integration time. Read all secrets from env via settings; each provider's API key is read from env — set the one your model strings use (e.g. `ANTHROPIC_API_KEY` for `anthropic:*`, `OPENAI_API_KEY` for `openai:*`). Also read DB URL, geo/PostHog keys from env.
 - **OOP + heavy Pydantic**: services as classes, dependencies injected, strict typed models for every boundary (request bodies, tool args, tool returns, API responses). No untyped dicts crossing a boundary.
 - **Logfire** instrumentation where the design specifies: `logfire.configure()`, `instrument_pydantic_ai()`, `instrument_fastapi(app)`, `instrument_httpx(capture_all=True)`, `instrument_sqlalchemy(engine)`. PostHog gets **metadata-only** for student messages (it does not scrub PII) — never send message content there.
 - **Ruff-clean**: a PostToolUse hook auto-formats on write, but write idiomatic, import-ordered, type-annotated code so formatting is a no-op. Do not leave unused imports or dead code.

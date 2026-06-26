@@ -27,9 +27,22 @@ class Settings(BaseSettings):
     )
 
     # --- Required secrets (no default; sourced from env) ---
+    # Only DATABASE_URL + ADMIN_TOKEN are required. No LLM provider key is required:
+    # PydanticAI is provider-agnostic and selects the provider from the model-string
+    # prefix (``anthropic:`` / ``openai:`` / ``google-gla:`` / ``groq:`` / ``mistral:``
+    # / ...), then reads THAT provider's key directly from the environment. This keeps
+    # migrations / ``get_settings()`` decoupled from any LLM provider.
     database_url: str
-    anthropic_api_key: str
     admin_token: str
+
+    # --- Optional LLM provider keys (documentation/explicit-load only) ---
+    # PydanticAI reads provider keys directly from env (ANTHROPIC_API_KEY /
+    # OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / MISTRAL_API_KEY / ...), so you
+    # only need to set the key for whichever provider your model strings use. These
+    # optional fields just let pydantic-settings document/load the common ones.
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
+    gemini_api_key: str | None = None
 
     # --- Optional tokens (None -> feature initializes in safe no-op mode) ---
     logfire_token: str | None = None

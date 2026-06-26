@@ -50,10 +50,15 @@ Python package. Dependencies are added with `uv add` / `pnpm add` only.
 ## 3. Component contracts
 
 ### 3.1 `app/config.py` — `Settings` (`pydantic-settings`)
-- Single config source. Fields: `database_url`, `anthropic_api_key`, `admin_token`,
-  `logfire_token: str|None=None`, `posthog_key: str|None=None`, `ipinfo_token: str|None=None`,
-  `orchestrator_model`, `worker_model`, `judge_model`, `supported: tuple=("es","en","pt")`,
-  `fallback_lang: str="en"`. Loaded from env/`.env`. (`-012`, `-017`)
+- Single config source. Required fields: `database_url`, `admin_token`. Optional provider keys
+  (at least one required for real LLM calls, none required for migrations or the stub):
+  `anthropic_api_key: str|None=None`, `openai_api_key: str|None=None`,
+  `gemini_api_key: str|None=None`. Other optional fields: `logfire_token: str|None=None`,
+  `posthog_key: str|None=None`, `ipinfo_token: str|None=None`. Model-string fields (any
+  PydanticAI provider prefix): `orchestrator_model`, `worker_model`, `judge_model`. Language
+  config: `supported: tuple=("es","en","pt")`, `fallback_lang: str="en"`. Loaded from
+  env/`.env`. No single LLM provider is required — decouples DB migrations from LLM keys.
+  (`-012`, `-017`)
 
 ### 3.2 `app/contract.py` — `TurnOutput`, `GuardrailReport`
 - Verbatim from the `json-contract` skill (nine fields; `lang_confidence`/`confidence_score`

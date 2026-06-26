@@ -66,7 +66,7 @@ runtime judge (`evaluation`); Railway/Vercel deploy + the eval CI gate (`platfor
 14. THE SYSTEM SHALL configure ruff (lint + format) and mypy in `backend/pyproject.toml` and a `.pre-commit-config.yaml` running ruff, ruff-format, and mypy.   <!-- eval: platform-scaffold-014 -->
 15. WHEN `uv run ruff check .` and `uv run mypy` run on the scaffold THE SYSTEM SHALL report no errors.   <!-- eval: platform-scaffold-015 -->
 16. WHEN CI runs on push or pull request THE SYSTEM SHALL execute ruff, mypy, pytest, and a backend Docker image build, failing the pipeline on any error.   <!-- eval: platform-scaffold-016 -->
-17. THE SYSTEM SHALL provide a `.env.example` listing required env vars (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `ADMIN_TOKEN`, `LOGFIRE_TOKEN`, `POSTHOG_KEY`, `IPINFO_TOKEN`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_POSTHOG_KEY`) with safe placeholder values.   <!-- eval: platform-scaffold-017 -->
+17. THE SYSTEM SHALL provide a `.env.example` listing required env vars — the active provider's LLM API key (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) plus `ORCHESTRATOR_MODEL`/`WORKER_MODEL`/`JUDGE_MODEL`, `DATABASE_URL`, `ADMIN_TOKEN`, `LOGFIRE_TOKEN`, `POSTHOG_KEY`, `IPINFO_TOKEN`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_POSTHOG_KEY` — with safe placeholder values.   <!-- eval: platform-scaffold-017 -->
 18. WHEN the frontend chat page loads and submits a message THE SYSTEM SHALL POST to `/chat` via `NEXT_PUBLIC_API_URL` and display the returned `reply`.   <!-- eval: platform-scaffold-018 -->
 19. WHEN `uv sync --frozen` and `pnpm install --frozen-lockfile` run THE SYSTEM SHALL succeed, proving manifests and lockfiles are in sync (deps were added via `uv add` / `pnpm add`, not hand-edited).   <!-- eval: platform-scaffold-019 -->
 

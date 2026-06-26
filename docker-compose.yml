@@ -51,21 +51,30 @@ services:
     env_file:
       - path: .env
         required: false
-    # get_settings() REQUIRES database_url + anthropic_api_key + admin_token to even
-    # construct, and the migrate-on-boot step calls it — so all three must be present
-    # or the container crashes immediately. Compose precedence is `environment` >
-    # `env_file`, so we use `${VAR:-default}` interpolation: a real root .env (auto-
-    # loaded by Compose for interpolation) OVERRIDES these dev defaults, while a clean
-    # checkout with no .env still boots on the placeholders below.
+    # get_settings() REQUIRES ONLY database_url + admin_token to construct, and the
+    # migrate-on-boot step calls it — so just those two need real values or the container
+    # crashes immediately. NO LLM key is required to boot (migrations + stub /chat make no
+    # LLM call). Compose precedence is `environment` > `env_file`, so we use `${VAR:-default}`
+    # interpolation: a real root .env (auto-loaded by Compose for interpolation) OVERRIDES
+    # these dev defaults, while a clean checkout with no .env still boots on the defaults.
     #   - DATABASE_URL points at the `db` SERVICE hostname (not localhost) on the
     #     compose network; a .env override for compose use should keep host=`db`.
-    #   - ANTHROPIC_API_KEY / ADMIN_TOKEN are throwaway dev placeholders: the stub
-    #     /chat makes no LLM call and migrations need no real key.
+    #   - ADMIN_TOKEN is a throwaway dev placeholder guarding admin endpoints.
+    #   - LLM is PROVIDER-AGNOSTIC (PydanticAI): the provider keys and model strings below
+    #     are PASSED THROUGH from the host/.env with empty defaults (`${VAR:-}`) so they
+    #     never *require* a value. Empty model strings fall back to config.py defaults;
+    #     set only the provider key matching your chosen model strings (also GROQ_API_KEY /
+    #     MISTRAL_API_KEY etc. can be added the same way if your models use them).
     #   - LOGFIRE_TOKEN / POSTHOG_KEY left unset on purpose -> observability no-ops.
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://zapp:zapp@db:5432/zapp}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-dev-placeholder}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin}
+      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-}
+      WORKER_MODEL: ${WORKER_MODEL:-}
+      JUDGE_MODEL: ${JUDGE_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "8000:8000"
 

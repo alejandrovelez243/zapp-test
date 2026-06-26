@@ -26,9 +26,10 @@ Two distinct judges, do not confuse them:
 ```python
 # backend/evals/config.py — the ONLY place judge model + thresholds live
 JUDGE_MODEL = "anthropic:claude-haiku-4-6"  # PLACEHOLDER id, confirm at integration;
-                                            # distinct provider/tier from prod agent
+                                            # any provider prefix works (openai:/google-gla:/groq:/…);
+                                            # pick a tier/provider distinct from the prod agent
 JUDGE_TEMPERATURE = 0.0
-JUDGE_MODEL_CI = "anthropic:claude-haiku-4-6"  # cheaper in CI
+JUDGE_MODEL_CI = "anthropic:claude-haiku-4-6"  # cheaper in CI; swap prefix/id freely
 THRESHOLDS = {
     "task_success_rate": 0.90,   # fraction of cases passing task-success
     "language_fidelity": 0.98,   # reply language == active_lang

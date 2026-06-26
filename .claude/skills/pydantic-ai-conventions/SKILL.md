@@ -9,11 +9,12 @@ Canonical patterns for the Philosophy School backend. PydanticAI ONLY (Google AD
 
 ## 1. Agent construction: typed form + model id in ONE config
 
-Model ids churn (`claude-sonnet-4-6` / `claude-opus-4-6` are PLACEHOLDERS). Keep them in a single config module; confirm the exact id at integration. `ANTHROPIC_API_KEY` comes from env.
+Model ids churn (`claude-sonnet-4-6` / `claude-opus-4-6` are PLACEHOLDERS). Keep them in a single config module; confirm the exact id at integration. Each provider's API key is read from env — set the one your model strings use (e.g. `ANTHROPIC_API_KEY` for `anthropic:*`, `OPENAI_API_KEY` for `openai:*`, `GEMINI_API_KEY` for `google-gla:*`). No single provider is required.
 
 ```python
 # app/agents/config.py — the ONLY place model ids live
-ORCHESTRATOR_MODEL = "anthropic:claude-opus-4-6"   # confirm id at integration
+# Any PydanticAI provider prefix works: anthropic: / openai: / google-gla: / groq: / mistral: / …
+ORCHESTRATOR_MODEL = "anthropic:claude-opus-4-6"   # confirm id at integration; swap prefix to change provider
 WORKER_MODEL       = "anthropic:claude-sonnet-4-6"
 JUDGE_MODEL        = "anthropic:claude-haiku-4-6"   # eval judge: distinct tier, temp 0
 ```
@@ -113,6 +114,8 @@ Reserve `pydantic-graph` ONLY for the human-in-the-loop enroll confirmation — 
 ```python
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+# Illustrative using Anthropic — swap in OpenAIModel/OpenAIModelSettings, GoogleModel, etc.
+# for other providers. FallbackModel may even mix providers (e.g. primary=Anthropic, secondary=OpenAI).
 
 model = FallbackModel(
     AnthropicModel(PRIMARY_ID, settings=AnthropicModelSettings(timeout=30.0)),

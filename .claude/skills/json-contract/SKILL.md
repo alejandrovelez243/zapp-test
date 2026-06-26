@@ -121,7 +121,7 @@ the output_validator:
 ```python
 from pydantic_ai import Agent, ModelRetry, RunContext
 
-agent = Agent("anthropic:<model-id>", deps_type=AgentDeps, output_type=TurnOutput)
+agent = Agent("<provider>:<model-id>", deps_type=AgentDeps, output_type=TurnOutput)  # any PydanticAI provider prefix works
 
 
 @agent.output_validator

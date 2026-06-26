@@ -8,7 +8,7 @@ The `require-spec` hook (active once registered — see `.claude/hooks/README.md
 
 ## Stack
 
-PydanticAI (`pydantic-ai`, v1.x) on Anthropic models; FastAPI; SQLModel over
+PydanticAI (`pydantic-ai`, v1.x) on any PydanticAI-supported provider (model string `<provider>:<model>`, e.g. `anthropic:claude-opus-4-6`); FastAPI; SQLModel over
 Postgres + pgvector (HNSW index); Alembic migrations; `pydantic-ai-guardrails`
 (v0.2.x); `pydantic-evals`; Logfire instrumentation. Package manager: `uv`.
 
@@ -41,7 +41,8 @@ Postgres + pgvector (HNSW index); Alembic migrations; `pydantic-ai-guardrails`
 ## Resilience -> needs_review
 
 - Wrap the production model in `FallbackModel(primary, secondary)` for retryable API
-  errors; set `AnthropicModelSettings(timeout=...)`; use `Agent(retries=2)` and
+  errors; set per-provider model settings (e.g. `AnthropicModelSettings(timeout=...)` /
+  `OpenAIModelSettings(timeout=...)`); use `Agent(retries=2)` and
   `@agent.tool(retries=2)`; `raise ModelRetry` for self-correction.
 - `FallbackModel` will NOT rescue a structurally-bad 200 response — pair it with
   output validators.
@@ -76,8 +77,10 @@ PageIndex is a documented upgrade path only.
 - **ruff-clean** (lint + format) before any commit; no unused imports, no bare excepts.
 - **Model ids are PLACEHOLDERS that churn** (e.g. `claude-sonnet-4-6`, `claude-opus-4-6`).
   Keep them in **ONE config module** and confirm the exact id at integration time.
-  `ANTHROPIC_API_KEY` from env. The LLM judge model is pinned (temperature 0, distinct
-  provider/tier from the production agent) in that same single config place.
+  Each provider's API key is read from env; set the one your model strings use
+  (e.g. `ANTHROPIC_API_KEY` for `anthropic:*`, `OPENAI_API_KEY` for `openai:*`). The LLM
+  judge model is pinned (temperature 0, distinct provider/tier from the production agent) in
+  that same single config place.
 
 ## Observability
 
