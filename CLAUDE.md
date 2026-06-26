@@ -68,6 +68,20 @@ Fuse an external geo-IP API on the request IP -> `detected_country`, a determini
 **output_validator**. Agreement -> high `confidence_score`; disagreement ->
 `needs_review=true`.
 
+## Dependency & runtime conventions (hard rules)
+
+- **Local dev runs on Docker + Docker Compose.** `docker compose up` brings up Postgres
+  (the `pgvector/pgvector` image, so `CREATE EXTENSION vector` works), the FastAPI backend,
+  and (optionally) the frontend. Do not assume a host Postgres or a host Python/Node env.
+- **Python deps are added ONLY via `uv add <pkg>` / `uv add --dev <pkg>`** (removed via
+  `uv remove`). **NEVER hand-edit** `[project.dependencies]` / `[dependency-groups]` in
+  `pyproject.toml`, and never touch `uv.lock` by hand — let `uv` write both.
+- **Frontend deps are added ONLY via `pnpm add <pkg>` / `pnpm add -D <pkg>`** (pnpm is the
+  package manager; `pnpm install` / `pnpm dev` / `pnpm build`). **NEVER hand-edit**
+  `package.json` dependencies or `pnpm-lock.yaml`.
+- Lockfiles (`uv.lock`, `pnpm-lock.yaml`) are committed and authoritative; CI and images
+  install **frozen** (`uv sync --frozen`, `pnpm install --frozen-lockfile`).
+
 ## Where things live
 
 - `PROJECT.md` — product vision, scope (Tier 3, risky features behind config flags), grading rubric.

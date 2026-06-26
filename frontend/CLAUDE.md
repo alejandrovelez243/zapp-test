@@ -12,6 +12,12 @@ Next.js **App Router**, TypeScript, deployed on **Vercel**. UI built with **shad
 + Tailwind. The product is multilingual (**ES / EN / PT**, fallback for unsupported);
 mirror `active_lang` from the per-turn contract in the UI.
 
+- **Package manager: `pnpm`.** Add/remove deps ONLY via `pnpm add <pkg>` / `pnpm add -D <pkg>` /
+  `pnpm remove`. **NEVER hand-edit** `package.json` deps or `pnpm-lock.yaml`. Scripts:
+  `pnpm install` / `pnpm dev` / `pnpm build` / `pnpm lint`. Commit `pnpm-lock.yaml`;
+  CI/images install with `pnpm install --frozen-lockfile` (enable via `corepack`).
+- Runs locally under **Docker Compose** as an optional service, or directly with `pnpm dev`.
+
 ## Talking to the backend
 
 - Call the FastAPI backend via **`NEXT_PUBLIC_API_URL`**. Render every per-turn

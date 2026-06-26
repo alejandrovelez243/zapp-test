@@ -158,11 +158,17 @@ eval scores and per-turn contract fields also feed PostHog dashboards.
 
 - **Agent runtime:** PydanticAI only (v1.x) + `pydantic-ai-guardrails` v0.2.x. ADK rejected;
   PageIndex deferred (both documented in design.md).
-- **Backend:** FastAPI on Railway; `uv` for deps; Alembic migrations (`CREATE EXTENSION IF NOT EXISTS
-  vector`).
+- **Backend:** FastAPI on Railway; `uv` for deps (added via `uv add` only); Alembic migrations
+  (`CREATE EXTENSION IF NOT EXISTS vector`).
+- **Local runtime & dependency management:** Docker + Docker Compose bring the stack up
+  (`docker compose up --build`); the DB service uses the `pgvector/pgvector` image (dev≈prod parity).
+  Python deps are added **only** via `uv add`, frontend deps **only** via `pnpm add` — `pyproject.toml`/
+  `uv.lock` and `package.json`/`pnpm-lock.yaml` are **never hand-edited**; lockfiles are committed and
+  installs are frozen in CI/images.
 - **Data / RAG:** Postgres + pgvector (HNSW index), pgvector-only, hybrid-ready; SQLModel `Document` /
   `DocumentChunk`; background ingestion; atomic re-ingest swap.
-- **Frontend:** Next.js on Vercel (Root Directory `frontend/`; `/ingest` reverse-proxy for PostHog).
+- **Frontend:** Next.js on Vercel (Root Directory `frontend/`; `/ingest` reverse-proxy for PostHog);
+  package manager **pnpm** (deps added via `pnpm add` only).
 - **Signal fusion APIs:** geo-IP (`ipinfo.io` / `ipapi.co`), `lingua` detector, REST Countries.
 - **Evaluation:** `pydantic-evals` (Dataset, Case, evaluators, reports).
 - **Observability:** Logfire (backend + LLM tracing/cost/latency, PII-scrubbed) and PostHog (product

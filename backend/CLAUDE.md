@@ -12,6 +12,13 @@ PydanticAI (`pydantic-ai`, v1.x) on Anthropic models; FastAPI; SQLModel over
 Postgres + pgvector (HNSW index); Alembic migrations; `pydantic-ai-guardrails`
 (v0.2.x); `pydantic-evals`; Logfire instrumentation. Package manager: `uv`.
 
+- **Add/remove deps ONLY via `uv add <pkg>` / `uv add --dev <pkg>` / `uv remove`.**
+  NEVER hand-edit `[project.dependencies]`/`[dependency-groups]` in `pyproject.toml`
+  or `uv.lock` — let `uv` write them. Commit `uv.lock`; images/CI use `uv sync --frozen`.
+- **Local runtime is Docker Compose** (`docker compose up`): the DB service uses the
+  `pgvector/pgvector` image (not plain `postgres`), the backend image installs with
+  `uv sync --frozen` and runs `uv run alembic upgrade head` then `uvicorn`.
+
 ## PydanticAI conventions (hard rules)
 
 - **`instructions=` over `system_prompt=`.** `system_prompt` persists into downstream

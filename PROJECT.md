@@ -141,6 +141,12 @@ flowchart TD
 `allow_origin_regex r'https://.*\.vercel\.app'` for preview URLs). Pick **one region (US or EU)
 consistently** across Logfire + PostHog.
 
+**Local runtime.** `docker compose up --build` brings up the whole stack: a `db` service on the
+**`pgvector/pgvector:pg16`** image (dev≈prod parity for the `vector` extension), a uv-based `backend`
+image (`uv sync --frozen` → `alembic upgrade head` → `uvicorn`), and an optional pnpm-based `frontend`
+service. **Dependencies are managed only via `uv add` (Python) and `pnpm add` (frontend); package
+manifests and lockfiles are never hand-edited, and images install frozen.**
+
 | Env var | Where | Secret? | Notes |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | Railway api | yes | Production agent + judge provider. |
