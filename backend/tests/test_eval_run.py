@@ -98,7 +98,7 @@ def test_gate_deferred_thresholds_skipped() -> None:
 def test_gate_latency_breach() -> None:
     """p95 latency above threshold → breach (lower-is-better metric). (evaluation-008)"""
     metrics = _passing_metrics()
-    metrics["latency_p95_ms"] = 9000.0  # > 6000 → BREACH
+    metrics["latency_p95_ms"] = 1_000_000.0  # far above any configured threshold → BREACH
     breaches = _gate(metrics)
     assert any("latency_p95_ms" in b for b in breaches)
 

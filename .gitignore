@@ -23,9 +23,9 @@ frontend/out/
 *.log
 .logfire/
 
-# Eval outputs (keep the committed example report)
-evals/reports/*
-!evals/reports/example-report.md
+# Eval outputs — generated reports (keep only the committed example report)
+backend/evals/reports/*
+!backend/evals/reports/example-report.md
 
 # OS / editor
 .DS_Store
