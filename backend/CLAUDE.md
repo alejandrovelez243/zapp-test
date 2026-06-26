@@ -8,7 +8,10 @@ The `require-spec` hook (active once registered — see `.claude/hooks/README.md
 
 ## Stack
 
-PydanticAI (`pydantic-ai`, v1.x) on any PydanticAI-supported provider (model string `<provider>:<model>`, e.g. `anthropic:claude-opus-4-6`); FastAPI; SQLModel over
+PydanticAI (`pydantic-ai`, v2.x) on any PydanticAI-supported provider, routed through the
+**Pydantic AI Gateway** (recommended) or direct provider strings. Gateway model strings use
+`gateway/<provider>:<model>` (e.g. `gateway/anthropic:claude-opus-4-6`); direct strings use
+`<provider>:<model>` (e.g. `anthropic:claude-opus-4-6`). FastAPI; SQLModel over
 Postgres + pgvector (HNSW index); Alembic migrations; `pydantic-ai-guardrails`
 (v0.2.x); `pydantic-evals`; Logfire instrumentation. Package manager: `uv`.
 
@@ -77,8 +80,12 @@ PageIndex is a documented upgrade path only.
 - **ruff-clean** (lint + format) before any commit; no unused imports, no bare excepts.
 - **Model ids are PLACEHOLDERS that churn** (e.g. `claude-sonnet-4-6`, `claude-opus-4-6`).
   Keep them in **ONE config module** and confirm the exact id at integration time.
-  Each provider's API key is read from env; set the one your model strings use
-  (e.g. `ANTHROPIC_API_KEY` for `anthropic:*`, `OPENAI_API_KEY` for `openai:*`). The LLM
+  **Default LLM path: Pydantic AI Gateway.** Model strings default to
+  `gateway/<provider>:<model>` (e.g. `gateway/anthropic:claude-sonnet-4-6`); the single
+  env var `PYDANTIC_AI_GATEWAY_API_KEY` (format `pylf_v1_us_...`, from logfire.pydantic.dev)
+  routes to all providers and auto-injects traceparent for Logfire distributed tracing.
+  Fallback: use direct `<provider>:<model>` strings and set the matching provider key
+  (`ANTHROPIC_API_KEY` for `anthropic:*`, `OPENAI_API_KEY` for `openai:*`, etc.). The LLM
   judge model is pinned (temperature 0, distinct provider/tier from the production agent) in
   that same single config place.
 

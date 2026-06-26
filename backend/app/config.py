@@ -35,7 +35,17 @@ class Settings(BaseSettings):
     database_url: str
     admin_token: str
 
-    # --- Optional LLM provider keys (documentation/explicit-load only) ---
+    # --- Pydantic AI Gateway (single key routes all providers through logfire.pydantic.dev) ---
+    # Obtained from logfire.pydantic.dev; key format: pylf_v1_<region>_<token>.
+    # When set, use gateway/... model strings (see orchestrator_model / worker_model /
+    # judge_model below). The gateway auto-injects traceparent for Logfire distributed
+    # tracing and allows swapping providers without rotating individual API keys.
+    pydantic_ai_gateway_api_key: str | None = None
+    # Auto-inferred from the region encoded in the key; override only when using a
+    # non-standard gateway deployment (e.g. self-hosted or staging).
+    pydantic_ai_gateway_base_url: str | None = None
+
+    # --- Optional direct-provider keys (fallback when not using the gateway) ---
     # PydanticAI reads provider keys directly from env (ANTHROPIC_API_KEY /
     # OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / MISTRAL_API_KEY / ...), so you
     # only need to set the key for whichever provider your model strings use. These
@@ -50,9 +60,12 @@ class Settings(BaseSettings):
     ipinfo_token: str | None = None
 
     # --- Model ids (PLACEHOLDERS; confirmed at integration time) ---
-    orchestrator_model: str = "anthropic:claude-opus-4-6"
-    worker_model: str = "anthropic:claude-sonnet-4-6"
-    judge_model: str = "anthropic:claude-haiku-4-6"
+    # Default: gateway/... strings routed through the Pydantic AI Gateway (reads
+    # PYDANTIC_AI_GATEWAY_API_KEY from env). To use a direct provider instead, override
+    # these with e.g. "anthropic:claude-opus-4-6" and set ANTHROPIC_API_KEY.
+    orchestrator_model: str = "gateway/anthropic:claude-opus-4-6"
+    worker_model: str = "gateway/anthropic:claude-sonnet-4-6"
+    judge_model: str = "gateway/anthropic:claude-haiku-4-6"
 
     # --- Language policy (consumed by later features) ---
     # req: multilingual-003 — supported language set and fallback

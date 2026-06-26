@@ -60,21 +60,32 @@ services:
     #   - DATABASE_URL points at the `db` SERVICE hostname (not localhost) on the
     #     compose network; a .env override for compose use should keep host=`db`.
     #   - ADMIN_TOKEN is a throwaway dev placeholder guarding admin endpoints.
-    #   - LLM is PROVIDER-AGNOSTIC (PydanticAI): the provider keys and model strings below
-    #     are PASSED THROUGH from the host/.env with empty defaults (`${VAR:-}`) so they
-    #     never *require* a value. Empty model strings fall back to config.py defaults;
-    #     set only the provider key matching your chosen model strings (also GROQ_API_KEY /
-    #     MISTRAL_API_KEY etc. can be added the same way if your models use them).
-    #   - LOGFIRE_TOKEN / POSTHOG_KEY left unset on purpose -> observability no-ops.
+    #   - LLM via Pydantic AI Gateway (recommended): PYDANTIC_AI_GATEWAY_API_KEY is the
+    #     single key that routes to all providers; the gateway auto-injects traceparent for
+    #     Logfire distributed tracing. PYDANTIC_AI_GATEWAY_BASE_URL is optional (inferred
+    #     from the key's region prefix). All LLM vars use `${VAR:-}` (empty default) so the
+    #     backend boots and migrates without any LLM key set.
+    #   - Direct-provider fallback: drop PYDANTIC_AI_GATEWAY_API_KEY and set the matching
+    #     provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY) instead.
+    #     GROQ_API_KEY / MISTRAL_API_KEY etc. can be added the same way.
+    #   - LOGFIRE_TOKEN passed through so Logfire client-side spans reach the right project.
+    #     Left empty -> Logfire initialises in safe no-op mode (no error on boot).
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://zapp:zapp@db:5432/zapp}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin}
+      # Gateway (one key, all providers):
+      PYDANTIC_AI_GATEWAY_API_KEY: ${PYDANTIC_AI_GATEWAY_API_KEY:-}
+      PYDANTIC_AI_GATEWAY_BASE_URL: ${PYDANTIC_AI_GATEWAY_BASE_URL:-}
+      # Model strings (gateway/<provider>:<model> when gateway key set; direct otherwise):
       ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-}
       WORKER_MODEL: ${WORKER_MODEL:-}
       JUDGE_MODEL: ${JUDGE_MODEL:-}
+      # Direct-provider fallback keys (all optional; set the one matching your model strings):
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Observability (empty -> no-op):
+      LOGFIRE_TOKEN: ${LOGFIRE_TOKEN:-}
     ports:
       - "8000:8000"
 

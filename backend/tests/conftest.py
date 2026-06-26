@@ -36,3 +36,19 @@ def _clear_orchestrator_cache() -> Generator[None, None, None]:
     get_orchestrator.cache_clear()
     yield
     get_orchestrator.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _set_gateway_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set a dummy PYDANTIC_AI_GATEWAY_API_KEY so get_orchestrator() can construct.
+
+    The default model strings are now ``gateway/anthropic:...``.  pydantic-ai 2.0
+    resolves the provider eagerly in ``Agent.__init__`` and reads
+    ``PYDANTIC_AI_GATEWAY_API_KEY`` from env via ``gateway_provider()``.  A dummy key
+    in the ``pylf_v1_<region>_<suffix>`` format satisfies the pattern check in
+    ``_infer_base_url`` so no ``UserError`` is raised at construction time.
+
+    The ``.override(TestModel(...)`` / ``.override(FunctionModel(...))`` calls in each
+    test still handle actual runs — no real gateway request is ever made.
+    """
+    monkeypatch.setenv("PYDANTIC_AI_GATEWAY_API_KEY", "pylf_v1_us_testdummykey")
