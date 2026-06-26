@@ -52,6 +52,7 @@ from app.contract import GuardrailReport, TurnOutput
 from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
 from app.eval.runtime import evaluate_conversation, is_goodbye
+from app.fusion.geo import GeoContext, GeoFusionService
 from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
 from app.lang.pipeline import LanguagePipeline
@@ -202,8 +203,17 @@ async def chat(
         #    req: multilingual-001, guardrails-006
         usage = RunUsage()
         turn: TurnOutput
+        # req: orchestrator-and-fusion-013 — geo is resolved before the orchestrator run so the
+        # degrade path can still report detected_country even when the model call fails.
+        # Initialised to the empty default; reassigned inside the async-with block (always, since
+        # GeoFusionService.resolve never raises).
+        geo: GeoContext = GeoContext()
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
+                # req: orchestrator-and-fusion-002, -013 — resolve geo BEFORE building AgentDeps
+                # and BEFORE the orchestrator run, reusing the SAME instrumented httpx client.
+                # GeoFusionService.resolve never raises; errors surface as source="error", ok=False.
+                geo = await GeoFusionService(http, settings).resolve(request_ip)
                 deps = AgentDeps(
                     session=db,
                     http=http,
@@ -212,6 +222,7 @@ async def chat(
                     active_lang=decision.active_lang,
                     detection=det,
                     lang_decision=decision,
+                    geo=geo,
                 )
                 result = await get_orchestrator().run(
                     gr_in.text,
@@ -247,6 +258,10 @@ async def chat(
             )
             await db.commit()
             turn = degraded_turn(decision.active_lang)
+            # req: orchestrator-and-fusion-013 — the degrade path still reports detected_country
+            # from the geo signal resolved above (geo.country is None on geo-error/private-ip,
+            # which is the correct safe value for the contract field).
+            turn.detected_country = geo.country
         else:
             # 8. Persist language state + full message history.
             #    req: multilingual-007

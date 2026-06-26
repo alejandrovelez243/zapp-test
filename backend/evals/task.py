@@ -28,6 +28,7 @@ from app.agents.session import ConversationSession
 from app.config import get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
+from app.fusion.geo import GeoFusionService
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.refusal import safe_refusal
 from app.lang.pipeline import LanguagePipeline
@@ -128,13 +129,31 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     # The (possibly PII-redacted) message forwarded to the agent.
     agent_message: str = gr_in.text
 
-    # Step 4 — Build AgentDeps.
-    #   ``session=None`` is intentional: the orchestrator has no DB tool in this release,
-    #   so the AsyncSession slot is never accessed during the run.  ``cast`` satisfies
-    #   strict mypy without runtime overhead; a type-ignore comment would be equivalent
-    #   but less expressive.
     http = httpx.AsyncClient()
     try:
+        # Step 3c — Geo resolution (mirror /chat boundary).
+        # Resolves detected_country / locale / timezone so the orchestrator
+        # output_validator (_reconcile_fusion) can set detected_country and
+        # confidence_score correctly.  GeoFusionService.resolve NEVER raises
+        # (errors → GeoContext(source="error", ok=False)) so no extra guard needed.
+        # req: orchestrator-and-fusion-001, orchestrator-and-fusion-002
+        #
+        # Criterion-006 (relative-date resolution) determinism:
+        #   The orchestrator's _with_geo_context instruction injects "now" at run time,
+        #   so the absolute date in final_normalized_text is non-deterministic across
+        #   wall-clock calls.  For eval criterion-006 Cases, assert that an absolute
+        #   date APPEARS in final_normalized_text (normalization occurred) rather than
+        #   asserting an exact value — OR inject a fixed "now" via a settings/env
+        #   override before calling run_turn.  Do NOT over-engineer run_turn for this;
+        #   geo resolution here is sufficient.
+        #   req: orchestrator-and-fusion-006
+        geo = await GeoFusionService(http, settings).resolve(request_ip)
+
+        # Step 4 — Build AgentDeps.
+        #   ``session=None`` is intentional: the orchestrator has no DB tool in this release,
+        #   so the AsyncSession slot is never accessed during the run.  ``cast`` satisfies
+        #   strict mypy without runtime overhead; a type-ignore comment would be equivalent
+        #   but less expressive.
         deps = AgentDeps(
             session=cast(AsyncSession, None),
             http=http,
@@ -143,6 +162,7 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
             active_lang=decision.active_lang,
             detection=det,
             lang_decision=decision,
+            geo=geo,
         )
 
         # Step 5 — RunUsage accumulates tokens across the full run (tools + retries +
