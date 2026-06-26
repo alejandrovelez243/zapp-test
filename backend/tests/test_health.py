@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_health_returns_200_ok() -> None:
-    """GET /health -> 200 {"status": "ok"}.  # platform-scaffold-008"""
-    with TestClient(app) as client:
-        response = client.get("/health")
+class TestHealth:
+    def test_health_returns_200_ok(self) -> None:
+        """GET /health -> 200 {"status": "ok"}.  # platform-scaffold-008"""
+        with TestClient(app) as client:
+            response = client.get("/health")
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}

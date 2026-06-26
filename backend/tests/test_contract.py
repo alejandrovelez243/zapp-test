@@ -43,37 +43,36 @@ def _make(**overrides: object) -> TurnOutput:
 # ---------------------------------------------------------------------------
 
 
-def test_turn_output_has_exactly_nine_fields() -> None:
-    """TurnOutput.model_dump() must contain exactly the nine contract fields."""
-    output = _make()
-    data = output.model_dump()
-    expected = {
-        "reply",
-        "detected_lang",
-        "active_lang",
-        "lang_confidence",
-        "final_normalized_text",
-        "detected_country",
-        "confidence_score",
-        "needs_review",
-        "guardrails",
-    }
-    assert set(data.keys()) == expected
-    assert len(data) == 9  # no extra fields sneaked in
+class TestContractShape:
+    def test_turn_output_has_exactly_nine_fields(self) -> None:
+        """TurnOutput.model_dump() must contain exactly the nine contract fields."""
+        output = _make()
+        data = output.model_dump()
+        expected = {
+            "reply",
+            "detected_lang",
+            "active_lang",
+            "lang_confidence",
+            "final_normalized_text",
+            "detected_country",
+            "confidence_score",
+            "needs_review",
+            "guardrails",
+        }
+        assert set(data.keys()) == expected
+        assert len(data) == 9  # no extra fields sneaked in
 
+    def test_guardrail_report_defaults_to_empty_lists(self) -> None:
+        """GuardrailReport() must default both lists to empty."""
+        report = GuardrailReport()
+        assert report.input == []
+        assert report.output == []
 
-def test_guardrail_report_defaults_to_empty_lists() -> None:
-    """GuardrailReport() must default both lists to empty."""
-    report = GuardrailReport()
-    assert report.input == []
-    assert report.output == []
-
-
-def test_guardrail_report_stores_triggered_names() -> None:
-    """GuardrailReport carries the names of triggered guardrails."""
-    report = GuardrailReport(input=["pii_detector"], output=["toxicity"])
-    assert report.input == ["pii_detector"]
-    assert report.output == ["toxicity"]
+    def test_guardrail_report_stores_triggered_names(self) -> None:
+        """GuardrailReport carries the names of triggered guardrails."""
+        report = GuardrailReport(input=["pii_detector"], output=["toxicity"])
+        assert report.input == ["pii_detector"]
+        assert report.output == ["toxicity"]
 
 
 # ---------------------------------------------------------------------------
@@ -81,22 +80,20 @@ def test_guardrail_report_stores_triggered_names() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lang_confidence_accepts_zero() -> None:
-    assert _make(lang_confidence=0.0).lang_confidence == 0.0
+class TestLangConfidenceConstraints:
+    def test_lang_confidence_accepts_zero(self) -> None:
+        assert _make(lang_confidence=0.0).lang_confidence == 0.0
 
+    def test_lang_confidence_accepts_one(self) -> None:
+        assert _make(lang_confidence=1.0).lang_confidence == 1.0
 
-def test_lang_confidence_accepts_one() -> None:
-    assert _make(lang_confidence=1.0).lang_confidence == 1.0
+    def test_lang_confidence_rejects_below_zero(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(lang_confidence=-0.01)
 
-
-def test_lang_confidence_rejects_below_zero() -> None:
-    with pytest.raises(ValidationError):
-        _make(lang_confidence=-0.01)
-
-
-def test_lang_confidence_rejects_above_one() -> None:
-    with pytest.raises(ValidationError):
-        _make(lang_confidence=1.01)
+    def test_lang_confidence_rejects_above_one(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(lang_confidence=1.01)
 
 
 # ---------------------------------------------------------------------------
@@ -104,22 +101,20 @@ def test_lang_confidence_rejects_above_one() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_confidence_score_accepts_zero() -> None:
-    assert _make(confidence_score=0.0).confidence_score == 0.0
+class TestConfidenceScoreConstraints:
+    def test_confidence_score_accepts_zero(self) -> None:
+        assert _make(confidence_score=0.0).confidence_score == 0.0
 
+    def test_confidence_score_accepts_one(self) -> None:
+        assert _make(confidence_score=1.0).confidence_score == 1.0
 
-def test_confidence_score_accepts_one() -> None:
-    assert _make(confidence_score=1.0).confidence_score == 1.0
+    def test_confidence_score_rejects_below_zero(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(confidence_score=-0.01)
 
-
-def test_confidence_score_rejects_below_zero() -> None:
-    with pytest.raises(ValidationError):
-        _make(confidence_score=-0.01)
-
-
-def test_confidence_score_rejects_above_one() -> None:
-    with pytest.raises(ValidationError):
-        _make(confidence_score=1.01)
+    def test_confidence_score_rejects_above_one(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(confidence_score=1.01)
 
 
 # ---------------------------------------------------------------------------
@@ -127,24 +122,22 @@ def test_confidence_score_rejects_above_one() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_detected_lang_rejects_single_char() -> None:
-    with pytest.raises(ValidationError):
-        _make(detected_lang="e")
+class TestLangFieldConstraints:
+    def test_detected_lang_rejects_single_char(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(detected_lang="e")
 
+    def test_detected_lang_rejects_three_chars(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(detected_lang="eng")
 
-def test_detected_lang_rejects_three_chars() -> None:
-    with pytest.raises(ValidationError):
-        _make(detected_lang="eng")
+    def test_active_lang_rejects_single_char(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(active_lang="e")
 
-
-def test_active_lang_rejects_single_char() -> None:
-    with pytest.raises(ValidationError):
-        _make(active_lang="e")
-
-
-def test_active_lang_rejects_three_chars() -> None:
-    with pytest.raises(ValidationError):
-        _make(active_lang="eng")
+    def test_active_lang_rejects_three_chars(self) -> None:
+        with pytest.raises(ValidationError):
+            _make(active_lang="eng")
 
 
 # ---------------------------------------------------------------------------
@@ -152,12 +145,12 @@ def test_active_lang_rejects_three_chars() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_detected_country_accepts_none() -> None:
-    output = _make(detected_country=None)
-    assert output.detected_country is None
+class TestDetectedCountry:
+    def test_detected_country_accepts_none(self) -> None:
+        output = _make(detected_country=None)
+        assert output.detected_country is None
 
-
-def test_detected_country_accepts_valid_alpha2() -> None:
-    """CountryAlpha2 coerces a valid 2-char code string."""
-    output = _make(detected_country="US")
-    assert str(output.detected_country) == "US"
+    def test_detected_country_accepts_valid_alpha2(self) -> None:
+        """CountryAlpha2 coerces a valid 2-char code string."""
+        output = _make(detected_country="US")
+        assert str(output.detected_country) == "US"

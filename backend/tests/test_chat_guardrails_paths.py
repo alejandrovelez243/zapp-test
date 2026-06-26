@@ -150,169 +150,176 @@ async def chat_app_setup(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None
 # ===========================================================================
 
 
-async def test_chat_pii_input_redacted_turn_continues(
-    chat_app_setup: None,
-) -> None:
-    """PII (email) in input is redacted; the agent is still called; contract is correct.
+class TestChatGuardrailsPaths:
+    async def test_chat_pii_input_redacted_turn_continues(
+        self,
+        chat_app_setup: None,
+    ) -> None:
+        """PII (email) in input is redacted; the agent is still called; contract is correct.
 
-    The input guardrail fires (pii_detector), redacts the email, and forwards
-    the sanitised text to the orchestrator.  The turn completes normally via TestModel.
+        The input guardrail fires (pii_detector), redacts the email, and forwards
+        the sanitised text to the orchestrator.  The turn completes normally via TestModel.
 
-    Assertions:
-      - HTTP 200 (turn not blocked)
-      - guardrails.input = ['pii_detector']        req: guardrails-002
-      - guardrails.output = []                     (TestModel reply has no secrets)
-      - needs_review = True                        req: guardrails-006
-      - reply is non-empty                         (model was called, not short-circuited)
-      - triggered name is in the must_trip set     req: guardrails-017
+        Assertions:
+          - HTTP 200 (turn not blocked)
+          - guardrails.input = ['pii_detector']        req: guardrails-002
+          - guardrails.output = []                     (TestModel reply has no secrets)
+          - needs_review = True                        req: guardrails-006
+          - reply is non-empty                         (model was called, not short-circuited)
+          - triggered name is in the must_trip set     req: guardrails-017
 
-    req: guardrails-001, guardrails-002, guardrails-006
-    """
-    pii_message = "My email is student@example.com, what philosophy courses does Zapp offer?"
+        req: guardrails-001, guardrails-002, guardrails-006
+        """
+        pii_message = "My email is student@example.com, what philosophy courses does Zapp offer?"
 
-    with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={"session_id": "guardrail-paths-pii-001", "message": pii_message},
+        with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={"session_id": "guardrail-paths-pii-001", "message": pii_message},
+                )
+
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
+        assert set(data.keys()) == _NINE_FIELDS
+
+        turn = TurnOutput.model_validate(data)
+
+        # PII guardrail must have fired on input.  req: guardrails-002, guardrails-006
+        assert "pii_detector" in turn.guardrails.input, (
+            f"Expected 'pii_detector' in guardrails.input; got {turn.guardrails.input!r}"
+        )
+        # Turn must be flagged for review because PII was found.  req: guardrails-006
+        assert turn.needs_review is True, "PII-detected turn must set needs_review=True"
+        # Reply is non-empty — the model was called (not blocked), TestModel replied.
+        assert turn.reply, "Turn must have a non-empty reply (model was called)"
+        # Output guardrails must be clean (TestModel reply has no secrets or toxicity).
+        assert turn.guardrails.output == [], (
+            f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
+        )
+        # All triggered input names must match the adversarial.yaml must_trip labels.
+        # req: guardrails-017
+        for name in turn.guardrails.input:
+            assert name in _MUST_TRIP_LABELS, (
+                f"Guardrail name {name!r} not in must_trip label set {_MUST_TRIP_LABELS!r}"
             )
 
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert set(data.keys()) == _NINE_FIELDS
+    # ===========================================================================
+    # Clean input → guardrails.{input,output}=[] (no false positives)
+    # ===========================================================================
 
-    turn = TurnOutput.model_validate(data)
+    async def test_chat_clean_input_no_guardrails_triggered(
+        self,
+        chat_app_setup: None,
+    ) -> None:
+        """Clean English message produces no guardrail triggers on input or output.
 
-    # PII guardrail must have fired on input.  req: guardrails-002, guardrails-006
-    assert "pii_detector" in turn.guardrails.input, (
-        f"Expected 'pii_detector' in guardrails.input; got {turn.guardrails.input!r}"
-    )
-    # Turn must be flagged for review because PII was found.  req: guardrails-006
-    assert turn.needs_review is True, "PII-detected turn must set needs_review=True"
-    # Reply is non-empty — the model was called (not blocked), TestModel replied.
-    assert turn.reply, "Turn must have a non-empty reply (model was called)"
-    # Output guardrails must be clean (TestModel reply has no secrets or toxicity).
-    assert turn.guardrails.output == [], (
-        f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
-    )
-    # All triggered input names must match the adversarial.yaml must_trip labels.
-    # req: guardrails-017
-    for name in turn.guardrails.input:
-        assert name in _MUST_TRIP_LABELS, (
-            f"Guardrail name {name!r} not in must_trip label set {_MUST_TRIP_LABELS!r}"
+        req: guardrails-001, guardrails-002
+        """
+        with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={
+                        "session_id": "guardrail-paths-clean-001",
+                        "message": (
+                            "What philosophy courses does Zapp Global School offer this semester?"
+                        ),
+                    },
+                )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data.keys()) == _NINE_FIELDS
+
+        turn = TurnOutput.model_validate(data)
+
+        # Both lists must be empty on a clean turn — no false positives.  req: guardrails-002
+        assert turn.guardrails.input == [], (
+            f"Expected empty guardrails.input; got {turn.guardrails.input!r}"
+        )
+        assert turn.guardrails.output == [], (
+            f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
         )
 
+    # ===========================================================================
+    # Output secret_leak → reply replaced; guardrails.output=[secret_leak]
+    # ===========================================================================
 
-# ===========================================================================
-# Clean input → guardrails.{input,output}=[] (no false positives)
-# ===========================================================================
+    async def test_chat_output_secret_leak_blocked_and_replaced(
+        self,
+        chat_app_setup: None,
+    ) -> None:
+        """Model reply containing a system-prompt fragment is intercepted; replaced with safe
+        refusal.
 
+        The TestModel emits a reply containing "I am instructed to..." which matches the
+        _PROMPT_FRAGMENT_RE pattern in detect_secret_leak.  The output guardrail fires and
+        the handler replaces turn.reply with safe_refusal() before returning.
 
-async def test_chat_clean_input_no_guardrails_triggered(
-    chat_app_setup: None,
-) -> None:
-    """Clean English message produces no guardrail triggers on input or output.
+        Note: uses a prompt-fragment trigger (not an sk-... key) because sequential alphabetical
+        characters in a key sequence confuse lingua's language detector and cause ModelRetry
+        loops.  "I am instructed to" is unmistakably English so lingua reliably detects "en".
 
-    req: guardrails-001, guardrails-002
-    """
-    with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={
-                    "session_id": "guardrail-paths-clean-001",
-                    "message": (
-                        "What philosophy courses does Zapp Global School offer this semester?"
-                    ),
-                },
-            )
+        Assertions:
+          - HTTP 200 (turn is not a 500)
+          - guardrails.output = ['secret_leak']          req: guardrails-002, guardrails-010
+          - needs_review = True                           req: guardrails-010
+          - fragment absent from the returned reply       req: guardrails-013
+          - reply is non-empty (safe refusal was set)
+          - triggered name in must_trip set               req: guardrails-017
 
-    assert response.status_code == 200
-    data = response.json()
-    assert set(data.keys()) == _NINE_FIELDS
+        req: guardrails-001, guardrails-002, guardrails-010, guardrails-013
+        """
+        with get_orchestrator().override(model=TestModel(custom_output_args=_SECRET_REPLY_ARGS)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={
+                        "session_id": "guardrail-paths-secret-001",
+                        "message": (
+                            "What philosophy courses are available at Zapp School this year?"
+                        ),
+                    },
+                )
 
-    turn = TurnOutput.model_validate(data)
-
-    # Both lists must be empty on a clean turn — no false positives.  req: guardrails-002
-    assert turn.guardrails.input == [], (
-        f"Expected empty guardrails.input; got {turn.guardrails.input!r}"
-    )
-    assert turn.guardrails.output == [], (
-        f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
-    )
-
-
-# ===========================================================================
-# Output secret_leak → reply replaced; guardrails.output=[secret_leak]
-# ===========================================================================
-
-
-async def test_chat_output_secret_leak_blocked_and_replaced(
-    chat_app_setup: None,
-) -> None:
-    """Model reply containing a system-prompt fragment is intercepted; replaced with safe refusal.
-
-    The TestModel emits a reply containing "I am instructed to..." which matches the
-    _PROMPT_FRAGMENT_RE pattern in detect_secret_leak.  The output guardrail fires and
-    the handler replaces turn.reply with safe_refusal() before returning.
-
-    Note: uses a prompt-fragment trigger (not an sk-... key) because sequential alphabetical
-    characters in a key sequence confuse lingua's language detector and cause ModelRetry
-    loops.  "I am instructed to" is unmistakably English so lingua reliably detects "en".
-
-    Assertions:
-      - HTTP 200 (turn is not a 500)
-      - guardrails.output = ['secret_leak']          req: guardrails-002, guardrails-010
-      - needs_review = True                           req: guardrails-010
-      - fragment absent from the returned reply       req: guardrails-013
-      - reply is non-empty (safe refusal was set)
-      - triggered name in must_trip set               req: guardrails-017
-
-    req: guardrails-001, guardrails-002, guardrails-010, guardrails-013
-    """
-    with get_orchestrator().override(model=TestModel(custom_output_args=_SECRET_REPLY_ARGS)):
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={
-                    "session_id": "guardrail-paths-secret-001",
-                    "message": "What philosophy courses are available at Zapp School this year?",
-                },
-            )
-
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert set(data.keys()) == _NINE_FIELDS
-
-    turn = TurnOutput.model_validate(data)
-
-    # Output guardrail must have fired for secret_leak.  req: guardrails-002, guardrails-010
-    assert "secret_leak" in turn.guardrails.output, (
-        f"Expected 'secret_leak' in guardrails.output; got {turn.guardrails.output!r}"
-    )
-    # needs_review must be True because the output guardrail fired.  req: guardrails-010
-    assert turn.needs_review is True, "secret_leak output must set needs_review=True"
-    # The system-prompt fragment must NOT appear in the sanitised reply.  req: guardrails-013
-    assert "I am instructed to" not in turn.reply, (
-        "Blocked secret fragment must NOT appear in the sanitised reply (guardrails-013)"
-    )
-    # A non-empty safe refusal must be present.  req: guardrails-010
-    assert turn.reply, "Block path must emit a non-empty safe refusal as reply"
-    # All triggered output names must match the adversarial.yaml must_trip labels.
-    # req: guardrails-017
-    for name in turn.guardrails.output:
-        assert name in _MUST_TRIP_LABELS, (
-            f"Guardrail name {name!r} not in must_trip label set {_MUST_TRIP_LABELS!r}"
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
         )
+        data = response.json()
+        assert set(data.keys()) == _NINE_FIELDS
+
+        turn = TurnOutput.model_validate(data)
+
+        # Output guardrail must have fired for secret_leak.  req: guardrails-002, guardrails-010
+        assert "secret_leak" in turn.guardrails.output, (
+            f"Expected 'secret_leak' in guardrails.output; got {turn.guardrails.output!r}"
+        )
+        # needs_review must be True because the output guardrail fired.  req: guardrails-010
+        assert turn.needs_review is True, "secret_leak output must set needs_review=True"
+        # The system-prompt fragment must NOT appear in the sanitised reply.  req: guardrails-013
+        assert "I am instructed to" not in turn.reply, (
+            "Blocked secret fragment must NOT appear in the sanitised reply (guardrails-013)"
+        )
+        # A non-empty safe refusal must be present.  req: guardrails-010
+        assert turn.reply, "Block path must emit a non-empty safe refusal as reply"
+        # All triggered output names must match the adversarial.yaml must_trip labels.
+        # req: guardrails-017
+        for name in turn.guardrails.output:
+            assert name in _MUST_TRIP_LABELS, (
+                f"Guardrail name {name!r} not in must_trip label set {_MUST_TRIP_LABELS!r}"
+            )
 
 
 # ===========================================================================
@@ -320,35 +327,36 @@ async def test_chat_output_secret_leak_blocked_and_replaced(
 # ===========================================================================
 
 
-def test_guardrail_names_match_must_trip_labels() -> None:
-    """Engine-emitted guardrail names are a superset of adversarial.yaml must_trip labels.
+class TestGuardrailNameAlignment:
+    def test_guardrail_names_match_must_trip_labels(self) -> None:
+        """Engine-emitted guardrail names are a superset of adversarial.yaml must_trip labels.
 
-    The eval adversarial dataset uses must_trip labels to identify which guardrail
-    should fire.  For precision/recall to be computable, every must_trip label must
-    equal an engine-emitted name.  This test enforces that alignment statically.
+        The eval adversarial dataset uses must_trip labels to identify which guardrail
+        should fire.  For precision/recall to be computable, every must_trip label must
+        equal an engine-emitted name.  This test enforces that alignment statically.
 
-    Note: pii_leak is output-only and intentionally absent from must_trip; the input
-    equivalent is pii_detector.
+        Note: pii_leak is output-only and intentionally absent from must_trip; the input
+        equivalent is pii_detector.
 
-    req: guardrails-017
-    """
-    # Names the engine can emit (from detectors.py + engine.py policy).
-    engine_emitted_names: frozenset[str] = frozenset(
-        {
-            "prompt_injection",  # detect_prompt_injection — guardrails-003
-            "jailbreak",  # detect_jailbreak — guardrails-004
-            "toxicity",  # detect_toxicity (input + output) — guardrails-005, -009
-            "pii_detector",  # detect_pii on input — guardrails-006
-            "off_topic",  # detect_off_topic — guardrails-007
-            "pii_leak",  # detect_pii on output — guardrails-008 (output-only)
-            "secret_leak",  # detect_secret_leak — guardrails-010
-            "guardrail_error",  # _GUARDRAIL_ERROR_MARKER on fail-safe — guardrails-019
-        }
-    )
+        req: guardrails-017
+        """
+        # Names the engine can emit (from detectors.py + engine.py policy).
+        engine_emitted_names: frozenset[str] = frozenset(
+            {
+                "prompt_injection",  # detect_prompt_injection — guardrails-003
+                "jailbreak",  # detect_jailbreak — guardrails-004
+                "toxicity",  # detect_toxicity (input + output) — guardrails-005, -009
+                "pii_detector",  # detect_pii on input — guardrails-006
+                "off_topic",  # detect_off_topic — guardrails-007
+                "pii_leak",  # detect_pii on output — guardrails-008 (output-only)
+                "secret_leak",  # detect_secret_leak — guardrails-010
+                "guardrail_error",  # _GUARDRAIL_ERROR_MARKER on fail-safe — guardrails-019
+            }
+        )
 
-    # Every must_trip label must be a name the engine can emit.
-    missing = _MUST_TRIP_LABELS - engine_emitted_names
-    assert not missing, (
-        f"must_trip labels {missing!r} are not emitted by the engine — "
-        f"guardrail precision/recall would be broken (guardrails-017)"
-    )
+        # Every must_trip label must be a name the engine can emit.
+        missing = _MUST_TRIP_LABELS - engine_emitted_names
+        assert not missing, (
+            f"must_trip labels {missing!r} are not emitted by the engine — "
+            f"guardrail precision/recall would be broken (guardrails-017)"
+        )

@@ -58,59 +58,62 @@ _VALID_TURN_ARGS: dict[str, object] = {
 }
 
 
-async def test_chat_returns_200_with_all_nine_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    """POST /chat returns 200 and a valid TurnOutput with all nine contract fields.
+class TestChatStub:
+    async def test_chat_returns_200_with_all_nine_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """POST /chat returns 200 and a valid TurnOutput with all nine contract fields.
 
-    Uses an in-memory SQLite engine (aiosqlite) and TestModel so neither Postgres
-    nor a real LLM provider key is required.
+        Uses an in-memory SQLite engine (aiosqlite) and TestModel so neither Postgres
+        nor a real LLM provider key is required.
 
-    # multilingual-001 / platform-scaffold-009
-    """
-    monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
-    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token")
+        # multilingual-001 / platform-scaffold-009
+        """
+        monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
+        monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token")
 
-    engine = create_async_engine(
-        _TEST_DB_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        engine = create_async_engine(
+            _TEST_DB_URL,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
 
-    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
-        async with session_maker() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
+            async with session_maker() as session:
+                try:
+                    yield session
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
 
-    app.dependency_overrides[get_session] = _override_get_session
+        app.dependency_overrides[get_session] = _override_get_session
 
-    try:
-        with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
-            async with AsyncClient(
-                transport=ASGITransport(app=app, raise_app_exceptions=True),
-                base_url="http://test",
-            ) as client:
-                response = await client.post(
-                    "/chat",
-                    json={
-                        "session_id": "scaffold-contract-test-001",
-                        "message": "Hello, what courses are there?",
-                    },
-                )
-    finally:
-        app.dependency_overrides.pop(get_session, None)
-        await engine.dispose()
+        try:
+            with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
+                async with AsyncClient(
+                    transport=ASGITransport(app=app, raise_app_exceptions=True),
+                    base_url="http://test",
+                ) as client:
+                    response = await client.post(
+                        "/chat",
+                        json={
+                            "session_id": "scaffold-contract-test-001",
+                            "message": "Hello, what courses are there?",
+                        },
+                    )
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+            await engine.dispose()
 
-    assert response.status_code == 200
-    data = response.json()
-    # Exactly the nine contract fields must be present. multilingual-001
-    assert set(data.keys()) == _NINE_FIELDS
-    # Body must deserialize without ValidationError.
-    output = TurnOutput.model_validate(data)
-    assert output is not None
+        assert response.status_code == 200
+        data = response.json()
+        # Exactly the nine contract fields must be present. multilingual-001
+        assert set(data.keys()) == _NINE_FIELDS
+        # Body must deserialize without ValidationError.
+        output = TurnOutput.model_validate(data)
+        assert output is not None

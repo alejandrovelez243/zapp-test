@@ -92,123 +92,127 @@ async def sqlite_app_setup(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
 
 
 # -------------------------------------------------------------------
-# Tests
+# Test class — multilingual boundary
 # -------------------------------------------------------------------
 
 
-async def test_chat_multilingual_happy_path_es(
-    sqlite_app_setup: None,
-) -> None:
-    """Spanish first-turn message → active_lang locked to "es", all 9 fields present.
+class TestChatMultilingual:
+    async def test_chat_multilingual_happy_path_es(
+        self,
+        sqlite_app_setup: None,
+    ) -> None:
+        """Spanish first-turn message → active_lang locked to "es", all 9 fields present.
 
-    req: multilingual-001 — all nine fields populated
-    req: multilingual-004 — first-turn lock to detected supported language (es)
-    """
-    # TestModel custom_output_args prime a Spanish reply; the output_validator
-    # overwrites active_lang from deps.active_lang (resolved by resolve_active_lang).
-    valid_turn_args: dict[str, object] = {
-        "reply": "¡Hola! En Zapp ofrecemos cursos de filosofía en español, inglés y portugués.",
-        "detected_lang": "es",
-        "active_lang": "es",
-        "lang_confidence": 0.9,
-        "final_normalized_text": "Hola, ¿qué cursos hay?",
-        "detected_country": None,
-        "confidence_score": 0.9,
-        "needs_review": False,
-        "guardrails": {"input": [], "output": []},
-    }
+        req: multilingual-001 — all nine fields populated
+        req: multilingual-004 — first-turn lock to detected supported language (es)
+        """
+        # TestModel custom_output_args prime a Spanish reply; the output_validator
+        # overwrites active_lang from deps.active_lang (resolved by resolve_active_lang).
+        valid_turn_args: dict[str, object] = {
+            "reply": "¡Hola! En Zapp ofrecemos cursos de filosofía en español, inglés y portugués.",
+            "detected_lang": "es",
+            "active_lang": "es",
+            "lang_confidence": 0.9,
+            "final_normalized_text": "Hola, ¿qué cursos hay?",
+            "detected_country": None,
+            "confidence_score": 0.9,
+            "needs_review": False,
+            "guardrails": {"input": [], "output": []},
+        }
 
-    with get_orchestrator().override(model=TestModel(custom_output_args=valid_turn_args)):
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={
-                    "session_id": "test-ml-es-001",
-                    "message": "Hola, ¿qué cursos hay?",
-                },
-            )
+        with get_orchestrator().override(model=TestModel(custom_output_args=valid_turn_args)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={
+                        "session_id": "test-ml-es-001",
+                        "message": "Hola, ¿qué cursos hay?",
+                    },
+                )
 
-    # HTTP 200 with valid JSON. req: multilingual-001
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    data = response.json()
+        # HTTP 200 with valid JSON. req: multilingual-001
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: {response.text}"
+        )
+        data = response.json()
 
-    # All nine contract fields must be present. req: multilingual-001
-    assert set(data.keys()) == _NINE_FIELDS, (
-        f"Missing or extra fields: {set(data.keys()).symmetric_difference(_NINE_FIELDS)}"
-    )
+        # All nine contract fields must be present. req: multilingual-001
+        assert set(data.keys()) == _NINE_FIELDS, (
+            f"Missing or extra fields: {set(data.keys()).symmetric_difference(_NINE_FIELDS)}"
+        )
 
-    # Deserializes without ValidationError.
-    turn = TurnOutput.model_validate(data)
+        # Deserializes without ValidationError.
+        turn = TurnOutput.model_validate(data)
 
-    # active_lang reflects the resolved decision (Spanish input → "es" on first turn).
-    # req: multilingual-004
-    assert turn.active_lang == "es", (
-        f"Expected active_lang='es' (first-turn lock), got {turn.active_lang!r}"
-    )
+        # active_lang reflects the resolved decision (Spanish input → "es" on first turn).
+        # req: multilingual-004
+        assert turn.active_lang == "es", (
+            f"Expected active_lang='es' (first-turn lock), got {turn.active_lang!r}"
+        )
 
-    # active_lang must be one of the supported codes. req: multilingual-003
-    assert turn.active_lang in SUPPORTED_LANGS
+        # active_lang must be one of the supported codes. req: multilingual-003
+        assert turn.active_lang in SUPPORTED_LANGS
 
-    # lang_confidence is the agreement score (both signals = "es"). req: multilingual-005
-    assert 0.0 <= turn.lang_confidence <= 1.0
+        # lang_confidence is the agreement score (both signals = "es"). req: multilingual-005
+        assert 0.0 <= turn.lang_confidence <= 1.0
 
-    # The reply field must be non-empty. req: multilingual-001
-    assert turn.reply
+        # The reply field must be non-empty. req: multilingual-001
+        assert turn.reply
 
+    async def test_chat_multilingual_all_nine_fields_types(
+        self,
+        sqlite_app_setup: None,
+    ) -> None:
+        """All nine TurnOutput fields are present with correct types in the JSON response.
 
-async def test_chat_multilingual_all_nine_fields_types(
-    sqlite_app_setup: None,
-) -> None:
-    """All nine TurnOutput fields are present with correct types in the JSON response.
+        req: multilingual-001 — nine-field contract on every turn
+        """
+        valid_turn_args: dict[str, object] = {
+            "reply": "In Zapp we offer philosophy courses in three languages.",
+            "detected_lang": "en",
+            "active_lang": "en",
+            "lang_confidence": 0.88,
+            "final_normalized_text": "Hello, what courses are available?",
+            "detected_country": None,
+            "confidence_score": 0.8,
+            "needs_review": False,
+            "guardrails": {"input": [], "output": []},
+        }
 
-    req: multilingual-001 — nine-field contract on every turn
-    """
-    valid_turn_args: dict[str, object] = {
-        "reply": "In Zapp we offer philosophy courses in three languages.",
-        "detected_lang": "en",
-        "active_lang": "en",
-        "lang_confidence": 0.88,
-        "final_normalized_text": "Hello, what courses are available?",
-        "detected_country": None,
-        "confidence_score": 0.8,
-        "needs_review": False,
-        "guardrails": {"input": [], "output": []},
-    }
+        with get_orchestrator().override(model=TestModel(custom_output_args=valid_turn_args)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={
+                        "session_id": "test-ml-en-types",
+                        "message": "Hello, what courses are available?",
+                    },
+                )
 
-    with get_orchestrator().override(model=TestModel(custom_output_args=valid_turn_args)):
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={
-                    "session_id": "test-ml-en-types",
-                    "message": "Hello, what courses are available?",
-                },
-            )
+        assert response.status_code == 200
+        data = response.json()
 
-    assert response.status_code == 200
-    data = response.json()
+        # Verify all nine fields are present. req: multilingual-001
+        assert set(data.keys()) == _NINE_FIELDS
 
-    # Verify all nine fields are present. req: multilingual-001
-    assert set(data.keys()) == _NINE_FIELDS
+        # Verify types of every field.
+        assert isinstance(data["reply"], str)
+        assert isinstance(data["detected_lang"], str) and len(data["detected_lang"]) == 2
+        assert isinstance(data["active_lang"], str) and len(data["active_lang"]) == 2
+        assert isinstance(data["lang_confidence"], float | int)
+        assert isinstance(data["final_normalized_text"], str)
+        assert data["detected_country"] is None or isinstance(data["detected_country"], str)
+        assert isinstance(data["confidence_score"], float | int)
+        assert isinstance(data["needs_review"], bool)
+        assert isinstance(data["guardrails"], dict)
+        assert "input" in data["guardrails"] and "output" in data["guardrails"]
 
-    # Verify types of every field.
-    assert isinstance(data["reply"], str)
-    assert isinstance(data["detected_lang"], str) and len(data["detected_lang"]) == 2
-    assert isinstance(data["active_lang"], str) and len(data["active_lang"]) == 2
-    assert isinstance(data["lang_confidence"], float | int)
-    assert isinstance(data["final_normalized_text"], str)
-    assert data["detected_country"] is None or isinstance(data["detected_country"], str)
-    assert isinstance(data["confidence_score"], float | int)
-    assert isinstance(data["needs_review"], bool)
-    assert isinstance(data["guardrails"], dict)
-    assert "input" in data["guardrails"] and "output" in data["guardrails"]
-
-    # Deserializes correctly. req: multilingual-001
-    turn = TurnOutput.model_validate(data)
-    assert turn.active_lang in SUPPORTED_LANGS
+        # Deserializes correctly. req: multilingual-001
+        turn = TurnOutput.model_validate(data)
+        assert turn.active_lang in SUPPORTED_LANGS
