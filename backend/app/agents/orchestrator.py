@@ -1,10 +1,14 @@
 """Orchestrator agent — emits the per-turn ``TurnOutput`` contract in the locked language.
 
 Builds the PydanticAI orchestrator with ``output_type=TurnOutput`` (the canonical nine-field
-per-turn contract), dynamic instructions that inject the session's locked ``active_lang``, and
-an ``output_validator`` that fuses the LLM's self-reported ``detected_lang`` with the
-deterministic ``lingua`` detector to set ``lang_confidence`` and the language ``needs_review``
-triggers, repairing the reply language if the model drifts.
+per-turn contract), dynamic instructions that inject the session's locked ``active_lang`` and
+the resolved geo context (locale + timezone + current time), and two ``output_validator``s:
+  1. ``_reconcile_language`` — fuses the LLM's ``detected_lang`` with the deterministic
+     lingua detector to set ``lang_confidence`` and language ``needs_review`` triggers.
+  2. ``_reconcile_fusion`` — sets ``detected_country`` from the resolved geo (code-set, NOT
+     LLM-guessed), calls the deterministic ``reconcile`` function to produce
+     ``confidence_score`` and OR ``needs_review``, and ensures ``final_normalized_text`` is
+     never empty.
 
 Agent construction is LAZY: importing this module requires NO provider API key. Only the
 first call to ``get_orchestrator()`` instantiates the ``Agent`` (which triggers provider-key
@@ -13,28 +17,38 @@ the FastAPI app boot, run migrations, and serve ``/health`` without any LLM cred
 the environment.
 
 Resilience (FallbackModel / timeouts / boundary exception handling) and ``UsageLimits`` are
-applied at the FastAPI boundary (Task 9) — this module is just the agent + validator.
+applied at the FastAPI boundary (Task 9) — this module is just the agent + validators.
 
 Satisfies:
-  multilingual-001 — emit the full nine-field TurnOutput contract on every turn
-  multilingual-005 — lang_confidence is the LLM-vs-detector agreement score
-  multilingual-006 — reply rendered in active_lang; lang_confidence recomputed
-  multilingual-007 — locked active_lang enforced on the output
-  multilingual-010 — low-confidence → keep active_lang, ask user to confirm, needs_review
-  multilingual-012 — detector failure → low lang_confidence + needs_review
+  multilingual-001  — emit the full nine-field TurnOutput contract on every turn
+  multilingual-005  — lang_confidence is the LLM-vs-detector agreement score
+  multilingual-006  — reply rendered in active_lang; lang_confidence recomputed
+  multilingual-007  — locked active_lang enforced on the output
+  multilingual-010  — low-confidence → keep active_lang, ask user to confirm, needs_review
+  multilingual-012  — detector failure → low lang_confidence + needs_review
+  orchestrator-and-fusion-001  — detected_country set by code (geo validator), never by LLM
+  orchestrator-and-fusion-005  — final_normalized_text = cleaned text + date resolution
+  orchestrator-and-fusion-006  — relative dates resolved to geo timezone in final_normalized_text
+  orchestrator-and-fusion-008  — confidence_score from deterministic reconcile()
+  orchestrator-and-fusion-013  — final_normalized_text never empty (falls back to reply)
+  orchestrator-and-fusion-014  — lang_fallback_used → needs_review via reconcile
 
 Design contract: specs/multilingual/design.md §2.4
+             + specs/orchestrator-and-fusion/design.md §2.4
 """
 
 from __future__ import annotations
 
+import datetime
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 
 from app.config import LANG_DISPLAY_NAMES, get_settings  # single source for display names
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
+from app.fusion.reconcile import reconcile
 from app.lang.detector import LanguageDetector
 from app.lang.fusion import compute_lang_confidence
 
@@ -142,6 +156,48 @@ def _reply_language_detector() -> LanguageDetector:
     return LanguageDetector()
 
 
+def _with_geo_context(ctx: RunContext[AgentDeps]) -> str:
+    """Inject geo locale + timezone + current wall-clock time into per-run instructions.
+
+    Tells the model the user's resolved locale, timezone, and the current datetime there
+    so it can resolve relative temporal expressions ("mañana", "next friday",
+    "amanhã") in ``final_normalized_text`` to absolute values.  Also instructs the model
+    not to touch ``detected_country`` (the validator sets it from the geo-IP signal).
+
+    Falls back to ``default_timezone`` / ``default_locale`` from settings when the
+    ``GeoContext`` does not carry enriched values (private IP, geo disabled, error path).
+    Any ZoneInfo lookup failure degrades silently to UTC — this function never raises.
+
+    req: orchestrator-and-fusion-005, -006, -014
+    Design contract: specs/orchestrator-and-fusion/design.md §2.4
+    """
+    geo = ctx.deps.geo
+    settings = get_settings()
+
+    tz_name: str = geo.timezone or settings.default_timezone
+    locale: str = geo.locale or settings.default_locale
+
+    now_str: str
+    try:
+        tz: datetime.tzinfo = ZoneInfo(tz_name)
+        now_str = datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M %Z")
+    except Exception:  # degrade silently; no crash per §2.4
+        tz_name = "UTC"
+        now_str = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    return (
+        f"USER GEO CONTEXT: locale={locale}, timezone={tz_name}, "
+        f"current local time={now_str}. "
+        "Set `final_normalized_text` to the user's message cleaned and normalized, "
+        "with any relative temporal expressions (such as 'mañana', 'next friday', "
+        "'la semana que viene', 'amanhã') resolved to ABSOLUTE date/time values "
+        f"based on the current local time above ({now_str}). "
+        "Write `final_normalized_text` in the session language (active_lang). "
+        "Do NOT set `detected_country` — the output validator sets it from the geo-IP "
+        "signal; any value you provide will be overwritten."
+    )
+
+
 def _with_active_language(ctx: RunContext[AgentDeps]) -> str:
     """Inject the locked ``active_lang`` into the per-run instructions (multilingual-007).
 
@@ -229,6 +285,74 @@ async def _reconcile_language(ctx: RunContext[AgentDeps], output: TurnOutput) ->
     return output
 
 
+async def _reconcile_fusion(ctx: RunContext[AgentDeps], output: TurnOutput) -> TurnOutput:
+    """Set detected_country + confidence_score from deterministic geo/lang signals.
+
+    Runs AFTER ``_reconcile_language`` (which has already written ``lang_confidence``
+    and ``active_lang`` onto *output*).  Guards streaming partials first per
+    pydantic-ai-conventions §4.
+
+    Steps:
+      1. Set ``output.detected_country`` from the resolved geo — code-set, never LLM-guessed.
+         (req: orchestrator-and-fusion-001)
+      2. Derive ``lang_fallback_used`` from ``deps.lang_decision.fallback_used``.
+         (req: orchestrator-and-fusion-014)
+      3. Call ``reconcile(geo, lang_confidence, active_lang, lang_fallback_used=...)``
+         → ``ReconcileResult``; apply ``confidence_score`` and OR ``needs_review``.
+         (req: orchestrator-and-fusion-008, -009, -011, -012, -014)
+      4. Ensure ``final_normalized_text`` is non-empty (fall back to ``reply``).
+         (req: orchestrator-and-fusion-001, -005, -013)
+
+    Never raises — ``GeoContext`` defaults are safe (``ok=False``, ``country=None``);
+    ``reconcile`` is a pure function that always returns.
+    (req: orchestrator-and-fusion-013)
+
+    Design contract: specs/orchestrator-and-fusion/design.md §2.4
+    """
+    # MANDATORY guard — never validate a half-built streaming partial.
+    # pydantic-ai-conventions §4: output_validators also run on streaming partials.
+    if ctx.partial_output:
+        return output
+
+    deps = ctx.deps
+
+    # Step 1 — detected_country is CODE-set from the resolved geo signal.
+    # geo.country may be None (private_ip / error / disabled); that is intentional.
+    # req: orchestrator-and-fusion-001
+    output.detected_country = deps.geo.country
+
+    # Step 2 — derive the unsupported-language fallback flag from the state machine.
+    # ActiveLangDecision.fallback_used is True when the detected language was unsupported
+    # and the session fell back to the configured fallback_lang (multilingual-009 path).
+    # req: orchestrator-and-fusion-014
+    lang_fallback_used: bool = deps.lang_decision.fallback_used
+
+    # Step 3 — deterministic reconciliation of geo + language signals.
+    # confidence_score is always set by code; the LLM's raw value is discarded.
+    # req: orchestrator-and-fusion-008 (pure fn), -009 (geo error), -011 (divergence),
+    #      -012 (REST Countries fail), -014 (fallback used)
+    res = reconcile(
+        deps.geo,
+        output.lang_confidence,
+        output.active_lang,
+        lang_fallback_used=lang_fallback_used,
+    )
+    output.confidence_score = res.confidence_score
+
+    # OR needs_review: once set (by language validator or this validator) never clear it.
+    # req: orchestrator-and-fusion-009, -011, -012, -014
+    output.needs_review = output.needs_review or res.needs_review
+
+    # Step 4 — final_normalized_text must never be empty.
+    # The model may leave it blank on very short inputs or error paths; fall back to
+    # the reply which is always non-empty (guaranteed by TurnOutput schema).
+    # req: orchestrator-and-fusion-001, -005, -013
+    if not output.final_normalized_text:
+        output.final_normalized_text = output.reply
+
+    return output
+
+
 # ---------------------------------------------------------------------------
 # Degradation helper — used by the FastAPI /chat boundary on model errors
 # ---------------------------------------------------------------------------
@@ -290,10 +414,27 @@ def get_orchestrator() -> Agent[AgentDeps, TurnOutput]:
         instructions=_BASE_INSTRUCTIONS,
         retries=2,
     )
-    # Register dynamic per-run instructions and the cross-field output validator on the
-    # freshly constructed agent. Calling agent.instructions(fn) / agent.output_validator(fn)
+    # Register dynamic per-run instructions and output validators on the freshly
+    # constructed agent. Calling agent.instructions(fn) / agent.output_validator(fn)
     # is identical to using @agent.instructions / @agent.output_validator as decorators —
-    # both append the function to the agent's internal lists. req: multilingual-007 / -005.
+    # both append to the agent's internal lists.
+    #
+    # Instructions order (both injected into every run):
+    #   1. _with_active_language — session language lock + reply-language contract
+    #      req: multilingual-007
+    #   2. _with_geo_context — locale + timezone + now; instructs final_normalized_text
+    #      date resolution; supersedes the active_language instruction's static guidance
+    #      on final_normalized_text with the richer geo-aware version.
+    #      req: orchestrator-and-fusion-005, -006
+    #
+    # Validator order (run in registration order; each sees prior validator's output):
+    #   1. _reconcile_language — sets lang_confidence, active_lang, needs_review
+    #      req: multilingual-005, -007, -010, -012
+    #   2. _reconcile_fusion — reads lang_confidence/active_lang; sets detected_country,
+    #      confidence_score, needs_review (OR), final_normalized_text fallback
+    #      req: orchestrator-and-fusion-001, -005, -008, -013, -014
     agent.instructions(_with_active_language)
+    agent.instructions(_with_geo_context)
     agent.output_validator(_reconcile_language)
+    agent.output_validator(_reconcile_fusion)
     return agent
