@@ -15,8 +15,12 @@
 #    No LLM provider key is needed for the scaffold CI. Both are set on the alembic and
 #    pytest steps pointing at the service container.
 #
-# 4. EVAL GATE ABSENT: `uv run python -m evals.run` belongs to platform-deploy (the
-#    evals module does not exist yet). Do NOT add it here.
+# 4. EVAL GATE: `uv run python -m evals.run` runs as a dedicated step in the backend
+#    job (after pytest, before docker build).  DEFERRED: guardrail precision/recall
+#    thresholds remain disabled in evals/config.py until the `guardrails` feature
+#    populates guardrails.{input,output} — the gate will not go red on missing
+#    guardrail data.  All other thresholds (task_success_rate, language_fidelity,
+#    judge_mean, latency_p95_ms, cost_per_conversation_usd) ARE enforced now.
 #
 # 5. FRONTEND: pnpm is activated via corepack (Node 22 ships corepack). Lockfileversion
 #    9.0 in pnpm-lock.yaml = pnpm 9.x; `corepack prepare pnpm@9 --activate` pins the
@@ -106,6 +110,31 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
           ADMIN_TOKEN: ci
         run: uv run pytest -q
+
+      - name: Eval gate — offline pydantic-evals suite
+        # req: evaluation-012
+        #
+        # GUARDRAIL: `uv run python -m evals.run` exits non-zero when thresholds are
+        # breached; CI inherits that exit code directly.  Do NOT wrap with `|| true`
+        # — that would silently swallow threshold failures.
+        #
+        # DEFERRED: guardrail precision/recall thresholds are disabled in
+        # evals/config.py until the `guardrails` feature lands and populates
+        # guardrails.{input,output}.  This gate will not go red on missing guardrail
+        # data; all other thresholds ARE enforced.
+        #
+        # PYDANTIC_AI_GATEWAY_API_KEY: the suite makes REAL gateway calls.  Set the
+        # secret in GitHub repository Settings → Secrets and variables → Actions.
+        # DATABASE_URL + ADMIN_TOKEN: dummy values required by get_settings() at
+        # import time; the eval task itself makes no DB queries.
+        # EVAL_CI=1: signals run.py to use JUDGE_MODEL_CI (the cheaper CI judge)
+        # instead of the production JUDGE_MODEL, controlling cost.
+        env:
+          PYDANTIC_AI_GATEWAY_API_KEY: ${{ secrets.PYDANTIC_AI_GATEWAY_API_KEY }}
+          EVAL_CI: "1"
+          DATABASE_URL: postgresql+asyncpg://u:p@localhost/db
+          ADMIN_TOKEN: ci
+        run: uv run python -m evals.run
 
       - name: Docker build — backend image
         # Run from repo root so `docker build ./backend` resolves the build context

@@ -24,7 +24,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 6. Implement `backend/evals/run.py` (`python -m evals.run`) + `report.py` — load all datasets, `evaluate_sync(run_turn)`, compute task success %, language fidelity %, guardrail precision/recall, judge mean (1–5), latency p50/p95 (`statistics.quantiles`), cost/conversation (PRICE_TABLE × RunUsage); render ONE markdown report + print summary; compare to `THRESHOLDS` (skip DEFERRED ones) and `sys.exit(1)` on breach; a judge error → case un-judged (not-passing), continue. — _req: evaluation-001, evaluation-006, evaluation-008, evaluation-009, evaluation-019 — owner: eval-engineer_
 
-- [ ] 7. Generate and COMMIT `backend/evals/reports/example-report.md` — a pre-generated example report (run the suite once with `PYDANTIC_AI_GATEWAY_API_KEY`; if no key is available, hand-author a representative report and regenerate later). — _req: evaluation-009, evaluation-013 — owner: eval-engineer_
+- [x] 7. Generate and COMMIT `backend/evals/reports/example-report.md` — a pre-generated example report (run the suite once with `PYDANTIC_AI_GATEWAY_API_KEY`; if no key is available, hand-author a representative report and regenerate later). — _req: evaluation-009, evaluation-013 — owner: eval-engineer_
 
 - [x] 8. Add the `SessionGrade` SQLModel (session_id, score 1–5, rationale, needs_review, model, created_at) + a `graded_at: datetime | None` column on `ConversationSession`, with Alembic migration `0004` (naive-UTC timestamps, matching the project convention). — _req: evaluation-016 — owner: backend-engineer_
 
@@ -34,7 +34,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 11. Wire the runtime triggers: `app/main.py` lifespan starts/stops the idle-sweep task WHERE `runtime_eval_enabled`; `app/api/chat.py` schedules `evaluate_conversation` as a background task after returning the turn when `is_goodbye(...)` and `runtime_eval_enabled`. — _req: evaluation-014, evaluation-015, evaluation-018 — owner: backend-engineer_
 
-- [ ] 12. Add the eval-gate to `.github/workflows/ci.yml` — a step `uv run python -m evals.run` on push/PR with `PYDANTIC_AI_GATEWAY_API_KEY` from GitHub Secrets and the CI judge id; the pipeline fails on non-zero exit. — _req: evaluation-012 — owner: devops-engineer_
+- [x] 12. Add the eval-gate to `.github/workflows/ci.yml` — a step `uv run python -m evals.run` on push/PR with `PYDANTIC_AI_GATEWAY_API_KEY` from GitHub Secrets and the CI judge id; the pipeline fails on non-zero exit. — _req: evaluation-012 — owner: devops-engineer_
 
 - [ ] 13. Add tests: `run.py` threshold/exit logic (mocked metrics → assert `SystemExit`), each evaluator on sample outputs, the structured judge via `TestModel`, `is_goodbye` (ES/EN/PT), `evaluate_conversation` (TestModel + aiosqlite in-memory), and the sweep `graded_at` guard. — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-008, evaluation-014, evaluation-015, evaluation-016, evaluation-017, evaluation-018, evaluation-019, evaluation-020 — owner: eval-engineer_
 
