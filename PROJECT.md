@@ -149,9 +149,8 @@ manifests and lockfiles are never hand-edited, and images install frozen.**
 
 | Env var | Where | Secret? | Notes |
 |---|---|---|---|
-| `PYDANTIC_AI_GATEWAY_API_KEY` | Railway api | yes | **Recommended default LLM path.** ONE key routes to all providers via the Pydantic AI Gateway; get it from logfire.pydantic.dev (format `pylf_v1_us_...`). Model strings use `gateway/<provider>:<model>`. Logfire tracing is automatic via traceparent injection — no extra wiring. |
+| `PYDANTIC_AI_GATEWAY_API_KEY` | Railway api | yes | **The only LLM credential.** ONE key routes to all providers via the Pydantic AI Gateway (no direct-provider fallback); get it from logfire.pydantic.dev (format `pylf_v1_us_...`). Model strings use `gateway/<provider>:<model>` (default: `gateway/openai:gpt-4.1`). Logfire tracing is automatic via traceparent injection — no extra wiring. |
 | `PYDANTIC_AI_GATEWAY_BASE_URL` | Railway api | no | Optional; auto-inferred from the key's region prefix. Override only for a custom or EU endpoint. |
-| `<PROVIDER>_API_KEY` (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) | Railway api | yes | Direct-provider fallback only — set when NOT using the gateway. PydanticAI reads the key that matches the model-string prefix. Leave blank when gateway key is set. |
 | `DATABASE_URL` | Railway api | yes | Postgres+pgvector; reference the pgvector service var. |
 | `ADMIN_TOKEN` | Railway api | yes | Guards doc/event management endpoints. |
 | `LOGFIRE_TOKEN` | Railway api | yes | Backend + LLM client-side tracing (separate from the gateway key); region must match PostHog. |

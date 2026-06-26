@@ -176,12 +176,10 @@ eval scores and per-turn contract fields also feed PostHog dashboards.
   analytics, session replay, feature flags, metadata-only for student messages). Pick one region
   (US or EU) consistently across both.
 - **LLM provider:** any PydanticAI-supported provider via the **Pydantic AI Gateway**
-  (recommended default) or direct provider strings. Gateway: ONE key (`PYDANTIC_AI_GATEWAY_API_KEY`,
+  (the ONLY supported path — no direct-provider fallback). ONE key (`PYDANTIC_AI_GATEWAY_API_KEY`,
   obtained from logfire.pydantic.dev, format `pylf_v1_us_...`) routes all traffic; model strings use
-  `gateway/<provider>:<model>` (e.g. `gateway/anthropic:claude-sonnet-4-6`); Logfire observability
-  is automatic via traceparent injection. Direct fallback: `<provider>:<model>` strings +
-  matching provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc.). Model
-  strings live in ONE config module; no single provider or key is mandated. Model ids are
+  `gateway/<provider>:<model>` (default: `gateway/openai:gpt-4.1`); Logfire observability is
+  automatic via traceparent injection. Model strings live in ONE config module. Model ids are
   confirmed at integration.
 
 ## 8. SDD Workflow & Specs-Before-Code

@@ -24,9 +24,7 @@ def test_settings_load_with_required_fields_only(monkeypatch: pytest.MonkeyPatch
     """
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/testdb")
     monkeypatch.setenv("ADMIN_TOKEN", "super-secret-token")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("PYDANTIC_AI_GATEWAY_API_KEY", raising=False)
     monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
     monkeypatch.delenv("POSTHOG_KEY", raising=False)
 
@@ -47,19 +45,29 @@ def test_supported_languages_and_fallback(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.fallback_lang == "en"
 
 
-def test_optional_llm_keys_default_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Provider API keys are None when absent — no LLM key is required.  # platform-scaffold-012"""
+def test_gateway_key_defaults_to_none_and_no_direct_provider_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gateway key is None when absent; no direct-provider key fields exist.
+
+    The only LLM credential path is PYDANTIC_AI_GATEWAY_API_KEY.
+    # platform-scaffold-012
+    """
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
     monkeypatch.setenv("ADMIN_TOKEN", "tok")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("PYDANTIC_AI_GATEWAY_API_KEY", raising=False)
+
+    from app.config import Settings
 
     settings = get_settings()
 
-    assert settings.anthropic_api_key is None
-    assert settings.openai_api_key is None
-    assert settings.gemini_api_key is None
+    # Gateway key is optional and absent by default.
+    assert settings.pydantic_ai_gateway_api_key is None
+
+    # Direct-provider key fields must not exist on the Settings model class.
+    assert "anthropic_api_key" not in Settings.model_fields
+    assert "openai_api_key" not in Settings.model_fields
+    assert "gemini_api_key" not in Settings.model_fields
 
 
 def test_configure_observability_noop_without_tokens(monkeypatch: pytest.MonkeyPatch) -> None:

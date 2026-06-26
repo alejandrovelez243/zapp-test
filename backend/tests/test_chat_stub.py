@@ -68,7 +68,6 @@ async def test_chat_returns_200_with_all_nine_fields(monkeypatch: pytest.MonkeyP
     """
     monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
     monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-for-construction-only")
 
     engine = create_async_engine(
         _TEST_DB_URL,

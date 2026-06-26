@@ -27,11 +27,10 @@ class Settings(BaseSettings):
     )
 
     # --- Required secrets (no default; sourced from env) ---
-    # Only DATABASE_URL + ADMIN_TOKEN are required. No LLM provider key is required:
-    # PydanticAI is provider-agnostic and selects the provider from the model-string
-    # prefix (``anthropic:`` / ``openai:`` / ``google-gla:`` / ``groq:`` / ``mistral:``
-    # / ...), then reads THAT provider's key directly from the environment. This keeps
-    # migrations / ``get_settings()`` decoupled from any LLM provider.
+    # Only DATABASE_URL + ADMIN_TOKEN are required. All LLM traffic is routed through
+    # the Pydantic AI Gateway (PYDANTIC_AI_GATEWAY_API_KEY). No direct-provider key
+    # fields are defined here; this keeps migrations / ``get_settings()`` decoupled
+    # from any LLM provider selection.
     database_url: str
     admin_token: str
 
@@ -45,15 +44,6 @@ class Settings(BaseSettings):
     # non-standard gateway deployment (e.g. self-hosted or staging).
     pydantic_ai_gateway_base_url: str | None = None
 
-    # --- Optional direct-provider keys (fallback when not using the gateway) ---
-    # PydanticAI reads provider keys directly from env (ANTHROPIC_API_KEY /
-    # OPENAI_API_KEY / GEMINI_API_KEY / GROQ_API_KEY / MISTRAL_API_KEY / ...), so you
-    # only need to set the key for whichever provider your model strings use. These
-    # optional fields just let pydantic-settings document/load the common ones.
-    anthropic_api_key: str | None = None
-    openai_api_key: str | None = None
-    gemini_api_key: str | None = None
-
     # --- Optional tokens (None -> feature initializes in safe no-op mode) ---
     logfire_token: str | None = None
     posthog_key: str | None = None
@@ -61,11 +51,12 @@ class Settings(BaseSettings):
 
     # --- Model ids (PLACEHOLDERS; confirmed at integration time) ---
     # Default: gateway/... strings routed through the Pydantic AI Gateway (reads
-    # PYDANTIC_AI_GATEWAY_API_KEY from env). To use a direct provider instead, override
-    # these with e.g. "anthropic:claude-opus-4-6" and set ANTHROPIC_API_KEY.
-    orchestrator_model: str = "gateway/anthropic:claude-opus-4-6"
-    worker_model: str = "gateway/anthropic:claude-sonnet-4-6"
-    judge_model: str = "gateway/anthropic:claude-haiku-4-6"
+    # PYDANTIC_AI_GATEWAY_API_KEY from env). The gateway is the ONLY LLM credential
+    # path — no direct-provider keys are configured here. To swap provider/model,
+    # override these vars in the environment (e.g. ORCHESTRATOR_MODEL=gateway/openai:gpt-4.1).
+    orchestrator_model: str = "gateway/openai:gpt-4.1"
+    worker_model: str = "gateway/openai:gpt-4.1-mini"
+    judge_model: str = "gateway/openai:gpt-4.1-mini"
 
     # --- Language policy (consumed by later features) ---
     # req: multilingual-003 — supported language set and fallback

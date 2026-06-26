@@ -68,7 +68,6 @@ async def degrade_app_setup(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[N
     """
     monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
     monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-degrade")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-ant-key-degrade")
 
     engine = create_async_engine(
         _TEST_DB_URL,

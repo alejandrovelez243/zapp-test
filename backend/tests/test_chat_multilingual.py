@@ -61,7 +61,6 @@ async def sqlite_app_setup(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[No
     """
     monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
     monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-ant-key-stub")
 
     engine = create_async_engine(
         _TEST_DB_URL,
