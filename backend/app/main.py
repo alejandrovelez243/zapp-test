@@ -15,6 +15,7 @@ platform-scaffold-009 (mounts ``POST /chat``).
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,9 +30,18 @@ _VERCEL_PREVIEW_REGEX = r"https://.*\.vercel\.app"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Wire observability at startup (token-gated, never raises), tear down on exit."""
-    configure_observability(app)
-    yield
+    """Wire observability and shared resources at startup; clean up on exit.
+
+    The shared ``httpx.AsyncClient`` is stored on ``app.state.http_client`` for
+    future integrations (e.g. direct route-level access to the geo/locale client).
+    The ``/chat`` handler additionally creates a per-request client so it stays
+    decoupled from the lifespan context.  The client stored here is available to
+    any route or middleware that reads ``request.app.state.http_client``.
+    """
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http_client:
+        app.state.http_client = http_client
+        configure_observability(app)
+        yield
 
 
 app = FastAPI(title="Zapp Philosophy School API", lifespan=lifespan)

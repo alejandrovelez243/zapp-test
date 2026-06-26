@@ -33,7 +33,7 @@ from functools import lru_cache
 from pydantic_ai import Agent, ModelRetry, RunContext
 
 from app.config import get_settings
-from app.contract import TurnOutput
+from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
 from app.lang.detector import LanguageDetector
 from app.lang.fusion import compute_lang_confidence
@@ -130,6 +130,47 @@ async def _reconcile_language(ctx: RunContext[AgentDeps], output: TurnOutput) ->
             )
 
     return output
+
+
+# ---------------------------------------------------------------------------
+# Degradation helper — used by the FastAPI /chat boundary on model errors
+# ---------------------------------------------------------------------------
+
+# Short, safe replies in each supported language for the degrade path.
+# req: multilingual-001 — all nine fields must still be emitted
+_DEGRADED_REPLIES: dict[str, str] = {
+    "es": "Lo siento, no pude procesar tu mensaje en este momento. Por favor, inténtalo de nuevo.",
+    "en": "I'm sorry, I couldn't process your message right now. Please try again.",
+    "pt": "Desculpe, não consegui processar sua mensagem agora. Por favor, tente novamente.",
+}
+
+
+def degraded_turn(active_lang: str) -> TurnOutput:
+    """Return a safe, valid ``TurnOutput`` for the model-error degradation path.
+
+    All nine contract fields are populated. ``needs_review=True`` signals that
+    the turn was not fulfilled by the model. The reply is a short, safe message
+    written in ``active_lang``; falls back to English when the language is not in
+    ``_DEGRADED_REPLIES``.
+
+    Called by the ``/chat`` boundary when the orchestrator raises
+    ``ModelHTTPError``, ``UnexpectedModelBehavior``, or ``UsageLimitExceeded``.
+
+    req: multilingual-001, multilingual-004, multilingual-008, multilingual-009
+    Design contract: specs/multilingual/design.md §2.6
+    """
+    reply = _DEGRADED_REPLIES.get(active_lang, _DEGRADED_REPLIES["en"])
+    return TurnOutput(
+        reply=reply,
+        detected_lang=active_lang,
+        active_lang=active_lang,
+        lang_confidence=0.0,
+        final_normalized_text="",
+        detected_country=None,
+        confidence_score=0.0,
+        needs_review=True,
+        guardrails=GuardrailReport(),
+    )
 
 
 @lru_cache(maxsize=1)
