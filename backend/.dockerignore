@@ -13,3 +13,7 @@ __pycache__
 .ruff_cache
 .pytest_cache
 .mypy_cache
+
+# evals/ ships in the image for the runtime judge (see Dockerfile), but its
+# generated report artifacts are host-only — keep them out of the build context.
+evals/reports

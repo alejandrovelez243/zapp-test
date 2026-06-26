@@ -30,12 +30,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # --- Application layer --------------------------------------------------------
-# Copy only what the runtime needs: the app package, the Alembic migration env,
-# and alembic.ini (read from /app at startup — its `prepend_sys_path = .` makes
-# `app.config` importable for env.py).
-COPY app/ ./app/
-COPY alembic/ ./alembic/
-COPY alembic.ini ./alembic.ini
+# Copy the whole build context (the backend root) AFTER `uv sync` so the cached
+# dependency layer above is never invalidated by an application-code edit. We copy
+# everything rather than enumerating dirs (app/, alembic/, evals/, alembic.ini, ...)
+# because a runtime import of a non-listed dir is a silent boot footgun — e.g.
+# app/eval/runtime.py imports `evals.config`/`evals.judge`, so a missing `COPY evals/`
+# crashes the backend on boot with `ModuleNotFoundError: No module named 'evals'`.
+# .dockerignore is the contract that keeps this lean and safe: it MUST exclude
+# .venv (or the host venv would clobber the image's), .env, and the caches.
+COPY . .
 
 # Put the project venv first on PATH so `python`/`alembic`/`uvicorn` resolve to it.
 ENV PATH="/app/.venv/bin:$PATH"
