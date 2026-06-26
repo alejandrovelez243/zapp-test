@@ -1,0 +1,159 @@
+# .github/workflows/ci.yml
+# Requirements: platform-scaffold-015 (ruff/mypy clean gate), platform-scaffold-016
+#               (automated CI on push/PR), platform-scaffold-019 (docker build proof).
+#
+# CANONICAL GUARDRAILS (preserved as code comments so knowledge survives in the repo):
+#
+# 1. LOCKFILE AUTHORITY: `uv sync --frozen` is mandatory — a drifted uv.lock fails the
+#    build. Never use `uv add` inside CI; the lockfile at backend/uv.lock is authoritative.
+#
+# 2. pgvector REQUIRED: the service container uses `pgvector/pgvector:pg16`, NOT plain
+#    `postgres`. The baseline Alembic migration runs `CREATE EXTENSION IF NOT EXISTS vector`,
+#    which only succeeds against the pgvector image.
+#
+# 3. MIGRATION ENV VARS: get_settings() requires ONLY `DATABASE_URL` + `ADMIN_TOKEN`.
+#    No LLM provider key is needed for the scaffold CI. Both are set on the alembic and
+#    pytest steps pointing at the service container.
+#
+# 4. EVAL GATE ABSENT: `uv run python -m evals.run` belongs to platform-deploy (the
+#    evals module does not exist yet). Do NOT add it here.
+#
+# 5. FRONTEND: pnpm is activated via corepack (Node 22 ships corepack). Lockfileversion
+#    9.0 in pnpm-lock.yaml = pnpm 9.x; `corepack prepare pnpm@9 --activate` pins the
+#    major. `pnpm install --frozen-lockfile` is mandatory; pnpm-lock.yaml is authoritative.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  # Cancel in-progress runs for the same workflow+ref combination so stale runs
+  # from rapid pushes do not consume CI minutes.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # BACKEND: lint → format-check → type-check → migrate → test → docker build
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Backend — lint / type-check / test / docker build
+    runs-on: ubuntu-latest
+
+    # pgvector/pgvector:pg16 is required (NOT plain postgres) so that
+    # CREATE EXTENSION IF NOT EXISTS vector in the baseline migration succeeds.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        # All uv / alembic / pytest / ruff / mypy commands run from backend/.
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv (with cache)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          # cache-dependency-glob is relative to $GITHUB_WORKSPACE (repo root).
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install Python dependencies
+        # --frozen: uv.lock is authoritative; resolution failure = build failure.
+        run: uv sync --frozen
+
+      - name: Lint — ruff check
+        # CI mode: no --fix flag so CI never mutates source, only verifies.
+        run: uv run ruff check .
+
+      - name: Format check — ruff format --check
+        # CI mode: --check exits non-zero if formatting is needed but does not rewrite.
+        run: uv run ruff format --check .
+
+      - name: Type check — mypy
+        run: uv run mypy
+
+      - name: Run Alembic migrations
+        # get_settings() requires ONLY DATABASE_URL + ADMIN_TOKEN; no LLM key needed.
+        # DATABASE_URL uses asyncpg driver, matching the app's async engine.
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+          ADMIN_TOKEN: ci
+        run: uv run alembic upgrade head
+
+      - name: Run tests — pytest
+        # DATABASE_URL + ADMIN_TOKEN are set so get_settings() (called via lifespan in
+        # TestClient) can resolve. Tests do not require a live DB query (stub endpoints),
+        # but the service container is available for any future integration tests.
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+          ADMIN_TOKEN: ci
+        run: uv run pytest -q
+
+      - name: Docker build — backend image
+        # Run from repo root so `docker build ./backend` resolves the build context
+        # correctly (Dockerfile at backend/Dockerfile, context = backend/).
+        # This step proves req platform-scaffold-019: the Dockerfile is valid and
+        # the image builds from a clean checkout.
+        working-directory: ${{ github.workspace }}
+        run: docker build ./backend
+
+  # ---------------------------------------------------------------------------
+  # FRONTEND: pnpm install (frozen) → pnpm build
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend — install / build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm via corepack
+        # corepack enable installs the pnpm shim; corepack prepare pins the major
+        # version matching pnpm-lock.yaml lockfileVersion 9.0 (= pnpm 9.x).
+        # Without an explicit prepare step, corepack in strict mode rejects calls to
+        # pnpm when no `packageManager` field is present in package.json.
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+
+      - name: Install frontend dependencies
+        # --frozen-lockfile: pnpm-lock.yaml is authoritative; a drifted lockfile fails
+        # the install rather than silently updating it.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        env:
+          # NEXT_TELEMETRY_DISABLED suppresses interactive telemetry prompts in CI.
+          # NEXT_PUBLIC_API_URL is build-time inlined (NEXT_PUBLIC_* are never secrets);
+          # set to a placeholder so Next.js does not emit a missing-env warning.
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: pnpm build
