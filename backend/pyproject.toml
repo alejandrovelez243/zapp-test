@@ -26,3 +26,32 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.20",
 ]
+
+# --- Tool config (hand-written; NOT dependencies) ---
+# Ruff is BOTH the linter and the formatter for this project — do NOT add
+# black / isort / flake8. `ruff check` lints (incl. import sorting via `I`);
+# `ruff format` formats.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade,
+# ASYNC async-lints, SIM flake8-simplify, RUF ruff-native rules.
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# Pydantic / PydanticAI models need this plugin to type-check correctly.
+plugins = ["pydantic.mypy"]
+# Scope to the `app` package for now. (The `evals` package does not exist yet.)
+files = ["app"]
+
+# Relax third-party libs that ship no type stubs so `strict` does not flag them.
+[[tool.mypy.overrides]]
+module = [
+    "pgvector.*",
+    "posthog.*",
+]
+ignore_missing_imports = true

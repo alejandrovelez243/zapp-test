@@ -1,0 +1,26 @@
+# Pre-commit: the lint / format / type layer ONLY.
+#
+# NOTE: The SDD `require-spec` GUARD (specs-before-code enforcement) is a SEPARATE
+# harness-owned hook under `.claude/hooks/` — do NOT duplicate or override it here.
+# This file covers ruff (lint), ruff-format, and mypy only.
+#
+# Hooks run in order: ruff (with --fix) -> ruff-format -> mypy.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Local hook so mypy runs inside the project's uv venv (where pydantic + the
+  # pydantic.mypy plugin and all deps are installed), matching how CI invokes it.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv --directory backend run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
