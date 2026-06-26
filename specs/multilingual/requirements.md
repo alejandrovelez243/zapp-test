@@ -23,8 +23,9 @@ Out of scope: geo-IP / `detected_country` / REST Countries locale variants (pt-B
 
 ## Config flags & config values
 
-- `lang_autoswitch` (flag, default **off**): off = hard-lock `active_lang` for the whole session;
-  on = allow a switch after ≥2 consecutive turns in another supported language.
+- `lang_autoswitch` (flag, default **on**): on = when the user writes another supported language the
+  system OFFERS to switch in the reply and switches after ≥2 consecutive turns in it; off = hard-lock
+  `active_lang` for the whole session.
 - Config values (resolved in design.md, not flags): `lang_confidence_min` (clarification threshold),
   `min_input_tokens` (short-input floor), `fallback_lang = en`.
 
@@ -54,6 +55,7 @@ Out of scope: geo-IP / `detected_country` / REST Countries locale variants (pt-B
 12. IF language detection fails THEN THE SYSTEM SHALL fall back to the LLM `detected_lang`, set `lang_confidence` to a low value, AND set `needs_review=true`.   <!-- eval: multilingual-012 -->
 13. WHERE language auto-switch is enabled THE SYSTEM SHALL switch `active_lang` to a new supported language only after the user writes in that language for at least two consecutive turns.   <!-- eval: multilingual-013 -->
 14. WHERE language auto-switch is disabled THE SYSTEM SHALL keep the first-turn `active_lang` for the entire session regardless of later turns' `detected_lang`.   <!-- eval: multilingual-014 -->
+15. WHEN a user writes a reliably-detected supported language different from the locked `active_lang` (and a switch is pending, not yet fired) THE SYSTEM SHALL offer in the `reply` to continue in that language AND SHALL NOT claim it cannot change language.   <!-- eval: multilingual-015 -->
 
 ## Case-id map
 

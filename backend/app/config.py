@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     min_input_chars: int = 12
     # req: multilingual-009 — consecutive turns required before auto-switch fires
     autoswitch_min_turns: int = 2
-    # req: multilingual-009 — Tier-3 flag; default off keeps the hard session lock
-    lang_autoswitch: bool = False
+    # req: multilingual-009, multilingual-015 — default on; after autoswitch_min_turns
+    # consecutive turns in a different supported language the system offers / fires a switch.
+    # Set LANG_AUTOSWITCH=false in env to revert to the hard session lock (multilingual-014).
+    lang_autoswitch: bool = True
 
     # --- Evaluation runtime (req: evaluation-014, evaluation-018) ---
     # Tier-3 flag: when False, skips the end-of-conversation judge and the idle sweep.

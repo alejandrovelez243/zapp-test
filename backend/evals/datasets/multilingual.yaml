@@ -387,3 +387,39 @@ cases:
         WHERE language auto-switch is disabled THE SYSTEM SHALL keep the
         first-turn active_lang for the entire session regardless of later turns'
         detected_lang.
+
+  # ---------------------------------------------------------------------------
+  # multilingual-015
+  # Requirement: WHEN a user writes a reliably-detected supported language
+  # different from the locked active_lang (switch pending, not yet fired)
+  # THE SYSTEM SHALL OFFER in the reply to continue in that language AND NOT
+  # claim it cannot change language.
+  # Scenario: session locked to en (prior_active_lang=en); user writes ES;
+  # lang_autoswitch=true (default on); this is the first consecutive ES turn
+  # (pending_switch_count=0 → becomes 1) so the switch has NOT yet fired.
+  # Expected: active_lang stays en this turn (the state machine accumulates the
+  # counter without firing); needs_review=false because ES is supported.
+  # The offer wording in the reply is LLM-produced — only assert field behavior.
+  # ---------------------------------------------------------------------------
+  - name: multilingual-015
+    inputs:
+      session_id: sess-ml-015
+      message: "Hola, ¿puedo inscribirme en el curso de filosofía antigua?"
+      prior_active_lang: en
+      lang_autoswitch: true
+      pending_switch_count: 0
+    expected_output:
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: multilingual
+      input_lang: es
+      prior_active_lang: en
+      autoswitch: true
+      pending_switch_count: 0
+      expected_reply_lang: en
+      requirement: >-
+        WHEN a user writes a reliably-detected supported language different from
+        the locked active_lang (switch pending, not yet fired) THE SYSTEM SHALL
+        OFFER in the reply to continue in that language AND NOT claim it cannot
+        change language.

@@ -51,6 +51,7 @@ from app.deps import AgentDeps
 from app.fusion.reconcile import reconcile
 from app.lang.detector import LanguageDetector
 from app.lang.fusion import compute_lang_confidence
+from app.lang.state import ActiveLangDecision
 
 # --- Static base instructions (NOT system_prompt — persona must not leak across agents) ---
 # Sections follow the agent-prompting skill: Role → Objective → Domain Context →
@@ -73,11 +74,13 @@ falls outside the school's domain (general trivia, other schools, unrelated subj
 ## Domain Context
 The school is Zapp Global Philosophy School — one institution with a fixed course
 catalog. Supported session languages are Spanish (es), English (en), and Portuguese
-(pt). The session language is locked on the first supported turn and must remain stable
-for the entire conversation; do not flip-flop between languages. Unsupported languages
-degrade gracefully to the configured fallback (English). Dedicated FAQ-RAG and Events
-tools are planned for a later release and do NOT exist yet — answer from general
-knowledge and be transparent when you are uncertain about specific details.
+(pt). The session language is set on the first supported turn and is stable by default;
+it may be offered or switched when the user consistently writes in a different supported
+language (the system handles switching automatically — see dynamic instructions below).
+Do not mix languages within a single reply. Unsupported languages degrade gracefully to
+the configured fallback (English). Dedicated FAQ-RAG and Events tools are planned for a
+later release and do NOT exist yet — answer from general knowledge and be transparent
+when you are uncertain about specific details.
 
 ## Capabilities & Tool Guidance
 No tools are available in this release. Do NOT claim to call any external tool, search
@@ -198,21 +201,53 @@ def _with_geo_context(ctx: RunContext[AgentDeps]) -> str:
     )
 
 
+def _lang_switch_instruction(lang_decision: ActiveLangDecision, active_lang_name: str) -> str:
+    """Return a language-switch suffix for the per-run instruction string.
+
+    Pure function — no I/O, no context — so it is directly unit-testable.
+    Returns an empty string when no switch event is relevant this turn.
+
+    req: multilingual-015 — offer to switch when pending; acknowledge when fired.
+    """
+    if lang_decision.switched:
+        return (
+            f" LANGUAGE SWITCH: The session language just switched to {active_lang_name}. "
+            "Briefly and naturally acknowledge this in your reply and answer in the new language."
+        )
+    if lang_decision.pending_switch_lang is not None:
+        pending_name = LANG_DISPLAY_NAMES.get(
+            lang_decision.pending_switch_lang, lang_decision.pending_switch_lang
+        )
+        return (
+            f" LANGUAGE OFFER: The user appears to be writing in {pending_name}. "
+            f"While answering in {active_lang_name} this turn, politely include an offer "
+            f"to continue in {pending_name} (for example: 'I notice you are writing in "
+            f"{pending_name} — would you like me to continue in {pending_name}?'). "
+            "Never tell the user that switching the session language is not possible."
+        )
+    return ""
+
+
 def _with_active_language(ctx: RunContext[AgentDeps]) -> str:
     """Inject the locked ``active_lang`` into the per-run instructions (multilingual-007).
 
     Dynamic (per-run) section: injects the session's locked language so the model
     knows exactly which language to write the ``reply`` in and what the difference
     between ``active_lang`` (session lock) and ``detected_lang`` (this turn) means.
+    When a language switch is pending, delegates to ``_lang_switch_instruction`` to
+    add an offer-to-switch note. When a switch just fired, adds an acknowledgement.
+
+    req: multilingual-007, multilingual-015
     """
     active_lang = ctx.deps.active_lang
+    lang_decision = ctx.deps.lang_decision
     # LANG_DISPLAY_NAMES imported from app.config — the single source. req: multilingual-007
     lang_name = LANG_DISPLAY_NAMES.get(active_lang, active_lang)
-    return (
+    base = (
         f"SESSION LANGUAGE: {lang_name} ({active_lang}). "
         f"You MUST write `reply` ONLY in {lang_name} — every word of the reply must be in "
         f"{lang_name} regardless of the language the user wrote in. "
-        f"Set `detected_lang` to the ISO 639-1 code of the language the USER wrote in THIS "
+        "Set `detected_lang` to the ISO 639-1 code of the language the USER wrote in THIS "
         "turn (two lowercase letters; may differ from the session language if the user "
         "switched). "
         "Set `final_normalized_text` to the user's message lightly cleaned in their ORIGINAL "
@@ -221,6 +256,8 @@ def _with_active_language(ctx: RunContext[AgentDeps]) -> str:
         "Do NOT set `active_lang`, `lang_confidence`, `needs_review`, or `guardrails` — "
         "the validator owns these fields."
     )
+    suffix = _lang_switch_instruction(lang_decision, lang_name)
+    return f"{base}{suffix}"
 
 
 async def _reconcile_language(ctx: RunContext[AgentDeps], output: TurnOutput) -> TurnOutput:
