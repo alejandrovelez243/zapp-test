@@ -366,6 +366,82 @@ class TestDetectToxicity:
             _d.detect_toxicity("What is the theory of forms in ancient philosophy?", "zz") is False
         )
 
+    # -----------------------------------------------------------------------
+    # Threat / violence patterns — live-repro + cross-lang coverage
+    # (Fix 2: bomb/bomba, shoot/tiroteo, massacre/masacre, explosive/explosivo)
+    # req: guardrails-005, guardrails-011
+    # -----------------------------------------------------------------------
+
+    def test_detect_toxicity_es_bomb_live_repro(self) -> None:
+        """Live-repro: 'voy a ponerles una bomba' → True with lang='es'.
+
+        The phrase matches the \\bbomba\\b pattern added to the ES threat layer.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert (
+            _d.detect_toxicity("voy a ponerles una bomba, porque ya me cansé de esa escuela", "es")
+            is True
+        )
+
+    def test_detect_toxicity_en_bomb_threat(self) -> None:
+        """EN bomb threat ('I'm going to bomb the school') → True with lang='en'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("I'm going to bomb the school right now.", "en") is True
+
+    def test_detect_toxicity_pt_kill_all(self) -> None:
+        """PT mass-murder threat ('vou matar todos') → True with lang='pt'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("vou matar todos vocês na próxima aula", "pt") is True
+
+    def test_detect_toxicity_es_shooting(self) -> None:
+        """ES 'tiroteo' threat keyword → True with lang='es'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("Voy a causar un tiroteo en la escuela.", "es") is True
+
+    def test_detect_toxicity_en_massacre(self) -> None:
+        """EN 'massacre' threat keyword → True with lang='en'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("I'm planning a massacre at the school.", "en") is True
+
+    def test_detect_toxicity_pt_explosive(self) -> None:
+        """PT 'explosivo' keyword → True with lang='pt'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("Tenho um explosivo e vou usá-lo.", "pt") is True
+
+    def test_detect_toxicity_es_benign_course_question(self) -> None:
+        """Benign ES course enquiry ('¿Qué cursos de filosofía hay?') → False.
+
+        Regression guard: threat patterns must not fire on normal student messages.
+
+        req: guardrails-005, guardrails-014
+        """
+        assert _d.detect_toxicity("¿Qué cursos de filosofía hay?", "es") is False
+
+    def test_detect_toxicity_en_plant_bomb(self) -> None:
+        """EN 'plant a bomb' explicit phrase → True with lang='en'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("I want to plant a bomb inside the auditorium.", "en") is True
+
+    def test_detect_toxicity_en_shooting(self) -> None:
+        """EN 'shooting' keyword → True with lang='en'.
+
+        req: guardrails-005, guardrails-011
+        """
+        assert _d.detect_toxicity("There will be a shooting at the campus tomorrow.", "en") is True
+
 
 # ===========================================================================
 # detect_off_topic (req: guardrails-007, -011, -014)

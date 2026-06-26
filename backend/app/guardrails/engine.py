@@ -216,9 +216,15 @@ class GuardrailEngine:
             triggered,
         )
         # req: guardrails-005
+        # A user may write toxic content in a language other than the locked session
+        # language (e.g. a Spanish threat in an EN-locked session). Check across ALL
+        # supported languages — same approach as run_output — to ensure detection is not
+        # limited to active_lang.
         is_toxic: bool = self._detect_safe(
             "toxicity",
-            lambda: self._detectors.detect_toxicity(message, active_lang),
+            lambda: any(
+                self._detectors.detect_toxicity(message, lang) for lang in self._settings.supported
+            ),
             triggered,
         )
         # req: guardrails-010 — secret-shaped content in the INPUT (a pasted API key,

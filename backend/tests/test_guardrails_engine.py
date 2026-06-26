@@ -165,6 +165,29 @@ class TestGuardrailEngineRunInput:
             f"Expected empty triggered with kill-switch; got {result.triggered!r}"
         )
 
+    async def test_run_input_toxicity_cross_lang_es_in_en_session(self) -> None:
+        """Spanish violent threat in an EN-locked session → blocked, 'toxicity' in triggered.
+
+        Live-repro: "voy a ponerles una bomba, porque ya me cansé de esa escuela"
+        was previously missed because run_input called detect_toxicity(message, active_lang)
+        with active_lang='en', which skips the ES pattern set.
+
+        Fix: run_input now checks ALL supported languages (es/en/pt), mirroring run_output.
+
+        req: guardrails-005, guardrails-011
+        """
+        result = await GuardrailEngine(_settings()).run_input(
+            "voy a ponerles una bomba, porque ya me cansé de esa escuela",
+            "en",  # session is locked to EN — the threat is in ES
+        )
+        assert result.blocked is True, (
+            "Spanish threat in EN session must be blocked (all-langs toxicity check)"
+        )
+        assert result.action == "block"
+        assert "toxicity" in result.triggered, (
+            f"Expected 'toxicity' in triggered; got {result.triggered!r}"
+        )
+
     async def test_run_input_guardrails_failsafe_on_detector_error(
         self,
         monkeypatch: pytest.MonkeyPatch,

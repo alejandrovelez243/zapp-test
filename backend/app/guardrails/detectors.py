@@ -244,15 +244,29 @@ class Detectors:
 
         _toxicity_en: re.Pattern[str] = re.compile(
             r"(?:"
-            # Explicit threats of violence
+            # Explicit threats of violence (existing)
             r"(?:i(?:'ll|\s+will)|i(?:'m|\s+am)\s+going\s+to)\s+(?:kill|murder|harm|hurt)\s+(?:you|him|her|them|everyone)"
             r"|(?:death|bomb)\s+threat"
             r"|\bkill\s+yourself\b"
             r"|\bgo\s+kill\s+yourself\b"
-            # Extreme directed profanity
+            # Bomb / explosive threats (new — word-boundary bounded; safety-first)
+            r"|\bbomb\b"
+            r"|plant\s+(?:a\s+)?bomb"
+            r"|detonate\s+(?:a\s+)?bomb"
+            r"|(?:going\s+to|gonna|will)\s+bomb\b"
+            r"|\bexplosive\b"
+            # Shooting / massacre / beheading threats (new)
+            r"|\bshooting\b"
+            r"|\bmassacre\b"
+            r"|shoot\s+(?:up|everyone|them|all\s+of)"
+            r"|open\s+fire\s+(?:on|at)"
+            r"|\bbehead\b"
+            # Attack / assault threats (new)
+            r"|attack\s+(?:the\s+)?(?:school|campus|building|people|university|students?)"
+            # Extreme directed profanity (existing)
             r"|\bf+u+c+k\s+(?:you|off|this)\b"
             r"|\bpiece\s+of\s+s+h+[i1]+t\b"
-            # Hate-speech structures (group-targeting violence/extermination language)
+            # Hate-speech structures (group-targeting violence/extermination language, existing)
             r"|\b(?:kill|exterminate|gas|wipe\s+out)\s+(?:all\s+)?(?:the\s+)?"
             r"(?:jews?|muslims?|blacks?|whites?|gays?|lesbians?|immigrants?)\b"
             r"|\bhate\s+all\s+(?:jews?|muslims?|blacks?|whites?|gays?|lesbians?)\b"
@@ -262,11 +276,25 @@ class Detectors:
 
         _toxicity_es: re.Pattern[str] = re.compile(
             r"(?:"
-            # Amenazas explícitas
-            r"te\s+voy\s+a\s+(?:matar|matar|golpear|hacer\s+daño)"
+            # Amenazas explícitas (existing)
+            r"te\s+voy\s+a\s+(?:matar|golpear|hacer\s+daño)"
             r"|voy\s+a\s+(?:matarte|asesinarte|hacerte\s+daño)"
             r"|te\s+mato\b"
-            # Insultos graves / hate speech
+            # Amenazas con bomba y violencia (new — safety-first; \bbomba\b catches
+            # "poner una bomba", "voy a ponerles una bomba", etc. with word-boundary)
+            r"|\bbomba\b"
+            r"|poner\s+(?:una\s+)?bomba\b"
+            r"|colocar\s+(?:una\s+)?bomba\b"
+            r"|\bexplosivo\b"
+            r"|\btiroteo\b"
+            r"|\batentado\b"
+            r"|\bmasacre\b"
+            r"|\bmasacrar\b"
+            r"|\bdisparar\b"
+            r"|los\s+voy\s+a\s+(?:matar|asesinar|atacar|eliminar)"
+            r"|voy\s+a\s+(?:matar|atacar|bombardear)\s+(?:a\s+)?(?:todos?|la\s+escuela|el\s+colegio|la\s+universidad)"
+            r"|vamos\s+a\s+(?:matar|atacar|bombardear)\b"
+            # Insultos graves / hate speech (existing)
             r"|hijo\s+de\s+(?:la\s+gran\s+)?puta"
             r"|vete\s+(?:a\s+la\s+)?(?:mierda|chingada)"
             r"|\b(?:matar|exterminar|eliminar)\s+(?:a\s+todos?\s+los?\s+)?"
@@ -278,11 +306,21 @@ class Detectors:
 
         _toxicity_pt: re.Pattern[str] = re.compile(
             r"(?:"
-            # Ameaças explícitas
+            # Ameaças explícitas (existing, extended to cover "todos"/"todo mundo")
             r"vou\s+te\s+(?:matar|machucar|bater)"
-            r"|vou\s+(?:matar|assassinar|machucar)\s+(?:você|te)\b"
+            r"|vou\s+(?:matar|assassinar|machucar)\s+(?:você|te|todos?|todo\s+mundo)\b"
             r"|te\s+mato\b"
-            # Insultos graves / hate speech
+            # Ameaças com bomba e violência (new)
+            r"|\bbomba\b"
+            r"|colocar\s+(?:uma\s+)?bomba\b"
+            r"|plantar\s+(?:uma\s+)?bomba\b"
+            r"|\bexplosivo\b"
+            r"|\btiroteio\b"
+            r"|\bmasacre\b"
+            r"|\bmasacrar\b"
+            r"|\bdecapitar\b"
+            r"|atirar\s+(?:em|nos?)\s+todos"
+            # Insultos graves / hate speech (existing)
             r"|filho\s+da\s+(?:puta|mãe)"
             r"|vai\s+(?:se\s+)?(?:foder|tomar\s+no\s+cu)"
             r"|\b(?:matar|exterminar|eliminar)\s+(?:todos?\s+os?\s+)?"
