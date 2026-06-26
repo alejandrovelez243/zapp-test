@@ -82,6 +82,42 @@ class TestTaskSuccessEvaluator:
         )
         assert TaskSuccess().evaluate(ctx) is True
 
+    def test_task_success_expected_needs_review_false_explicit(self) -> None:
+        """expected_output specifies needs_review=False; output matches → True.
+
+        Regression guard: when expected_output explicitly declares needs_review=False,
+        the field-match loop already verified it; the final gate must be skipped so
+        no redundant double-check occurs.  This mirrors fusion Cases that assert
+        needs_review=false for happy-path geo turns. (evaluation-002)
+        """
+        ctx = _ctx(
+            output={"active_lang": "es", "needs_review": False, "reply": "Hola"},
+            expected_output={"active_lang": "es", "needs_review": False},
+        )
+        assert TaskSuccess().evaluate(ctx) is True
+
+    def test_task_success_needs_review_gate_skipped_when_in_expected(self) -> None:
+        """The final needs_review gate is skipped whenever expected_output names needs_review.
+
+        Regression guard: the gate (needs_review is False) must NOT fire when
+        expected_output explicitly declares needs_review — the field-match loop already
+        verified it for both True and False values.  Covers the language-fallback Case
+        pattern (evaluation-020) that expects needs_review=True. (evaluation-002)
+        """
+        # Branch A: explicit False in expected — loop verified it, gate skipped.
+        ctx_false = _ctx(
+            output={"active_lang": "es", "needs_review": False},
+            expected_output={"active_lang": "es", "needs_review": False},
+        )
+        assert TaskSuccess().evaluate(ctx_false) is True
+
+        # Branch B: explicit True in expected — loop verified it, gate skipped.
+        ctx_true = _ctx(
+            output={"active_lang": "en", "needs_review": True},
+            expected_output={"active_lang": "en", "needs_review": True},
+        )
+        assert TaskSuccess().evaluate(ctx_true) is True
+
 
 # ---------------------------------------------------------------------------
 # LanguageFidelity (evaluation-003, evaluation-020)

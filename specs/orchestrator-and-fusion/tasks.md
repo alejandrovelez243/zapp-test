@@ -31,7 +31,7 @@ orchestrator/boundary wiring. Drive task-by-task via `/implement orchestrator-an
 
 - [x] 9. Add tests: `GeoFusionService` (ipapi+REST via mocked httpx, private-IP, flags off, cache reuse, error→null, never-raises), `reconcile` (every branch), the orchestrator `_reconcile_fusion` validator (sets the 3 fields + needs_review via TestModel), and the `/chat` boundary (geo attached + degrade carries geo). — _req: orchestrator-and-fusion-001..orchestrator-and-fusion-017 — owner: backend-engineer_
 
-- [ ] 10. Eval verification: run the suite so `detected_country`/`confidence_score` populate and the fusion Cases pass; tune rules/dataset if needed. (Real run needs `PYDANTIC_AI_GATEWAY_API_KEY`; the deterministic geo/reconcile logic is unit-verifiable without it.) — _req: orchestrator-and-fusion-001..orchestrator-and-fusion-017 — owner: eval-engineer_
+- [x] 10. Eval verification: run the suite so `detected_country`/`confidence_score` populate and the fusion Cases pass; tune rules/dataset if needed. (Real run needs `PYDANTIC_AI_GATEWAY_API_KEY`; the deterministic geo/reconcile logic is unit-verifiable without it.) — _req: orchestrator-and-fusion-001..orchestrator-and-fusion-017 — owner: eval-engineer_
 
 ## Coverage
 

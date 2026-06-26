@@ -28,7 +28,7 @@ from app.agents.session import ConversationSession
 from app.config import get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
-from app.fusion.geo import GeoFusionService
+from app.fusion.geo import GeoContext, GeoFusionService
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.refusal import safe_refusal
 from app.lang.pipeline import LanguagePipeline
@@ -84,6 +84,12 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
     request_ip: str = inputs.get("ip", "0.0.0.0")
     prior_active_lang: str | None = inputs.get("prior_active_lang")
     session_id: str = inputs.get("session_id") or str(uuid.uuid4())
+    # Optional geo injection: when inputs["geo"] is provided as a dict, a
+    # GeoContext is built from it directly and the live GeoFusionService.resolve
+    # call is skipped.  This decouples geo-assertion Cases from ipapi.co uptime
+    # and rate limits, making the eval deterministic for CI.  When absent,
+    # resolve live as today.  req: orchestrator-and-fusion-002, -010, -011
+    _raw_geo = inputs.get("geo")
 
     # Settings resolved once per turn; shared by LanguagePipeline and GuardrailEngine.
     settings = get_settings()
@@ -138,6 +144,12 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
         # (errors → GeoContext(source="error", ok=False)) so no extra guard needed.
         # req: orchestrator-and-fusion-001, orchestrator-and-fusion-002
         #
+        # When inputs["geo"] was provided (see _raw_geo above), build GeoContext
+        # directly from the injected dict and skip the live ipapi.co call.  This
+        # keeps geo-asserting Cases deterministic in CI regardless of ipapi.co
+        # availability or rate limits.  When _raw_geo is None, resolve live.
+        # req: orchestrator-and-fusion-002, -010, -011
+        #
         # Criterion-006 (relative-date resolution) determinism:
         #   The orchestrator's _with_geo_context instruction injects "now" at run time,
         #   so the absolute date in final_normalized_text is non-deterministic across
@@ -147,7 +159,10 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
         #   override before calling run_turn.  Do NOT over-engineer run_turn for this;
         #   geo resolution here is sufficient.
         #   req: orchestrator-and-fusion-006
-        geo = await GeoFusionService(http, settings).resolve(request_ip)
+        if _raw_geo is not None:
+            geo = GeoContext.model_validate(_raw_geo)
+        else:
+            geo = await GeoFusionService(http, settings).resolve(request_ip)
 
         # Step 4 — Build AgentDeps.
         #   ``session=None`` is intentional: the orchestrator has no DB tool in this release,

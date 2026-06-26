@@ -193,9 +193,13 @@ class GeoFusionService:
         with logfire.span("geo_fusion", ip=ip):
             result = await self._fetch_and_enrich(ip)
 
-        # Populate the cache with the fetched result (regardless of ok status, to
-        # avoid hammering a blocked/erroring IP on every request).
-        self._cache[ip] = result
+        # req-017: only cache determinate (non-error) results.  source="error"
+        # is typically transient (flaky API, timeout) — caching it would make a
+        # temporary failure sticky across the process lifetime.  source="ipapi"
+        # (ok=True or ok=False) is cacheable because the country/timezone are
+        # authoritative even when REST Countries enrichment failed.
+        if result.source != "error":
+            self._cache[ip] = result
         return result
 
     async def _fetch_and_enrich(self, ip: str) -> GeoContext:

@@ -5,19 +5,18 @@
 # These Cases exercise the geo-IP + REST Countries fusion path introduced in
 # orchestrator-and-fusion Tasks 2, 5, 6, 7 — verified here in Task 8.
 #
-# EXTERNAL DEPENDENCY WARNING:
-#   Cases orchestrator-and-fusion-002, orchestrator-and-fusion-006, and
-#   orchestrator-and-fusion-011 resolve geo via a REAL ipapi.co call (keyless, free
-#   tier, HTTPS).  Keep this file's real-geo Case count small (currently 3 unique
-#   IP addresses) to bound flakiness and rate-limit risk.  The per-IP LRU cache
-#   (req-017) means orchestrator-and-fusion-011 may reuse the resolved result from
-#   orchestrator-and-fusion-002 if run in the same process (both share 200.147.1.1).
-#   Case orchestrator-and-fusion-010 (private/loopback IP) makes NO external call.
+# GEO INJECTION (deterministic CI):
+#   Cases orchestrator-and-fusion-002, -006, and -011 inject a ``inputs.geo`` dict
+#   so that run_turn builds GeoContext directly (SKIP the live ipapi.co call).
+#   This removes the external-API dependency from CI without changing the logic
+#   under test: the orchestrator output_validator (_reconcile_fusion) reads
+#   deps.geo exactly the same way whether geo arrived from the injection path
+#   or from the live ipapi.co path.
+#   See evals/task.py run_turn for the injection branch (``if _raw_geo is not None``).
 #
-# IP provenance — stable, well-known ISP allocations:
-#   200.147.1.1  — Oi/Telemar Telecomunicacoes (Brazil, LACNIC) → ipapi.co: BR
-#   189.210.1.1  — America Movil/Telmex (Mexico, LACNIC)         → ipapi.co: MX
-#   127.0.0.1    — loopback; GeoFusionService short-circuits, no external call
+# Case orchestrator-and-fusion-010 (private/loopback IP) makes NO external call
+# regardless of injection — GeoFusionService short-circuits on 127.0.0.1 — so
+# no geo injection is needed or used there.
 #
 # Evaluators attached by run.py (suite: fusion):
 #   TaskSuccess, LanguageFidelity, SubjectiveQualityJudge
@@ -40,8 +39,8 @@ cases:
   # Requirement: WHEN a turn is processed THE SYSTEM SHALL resolve detected_country
   # (ISO 3166-1 alpha-2) from a geo-IP lookup on the request IP.
   #
-  # Scenario: Brazilian public IP (200.147.1.1) + Portuguese message.
-  # ipapi.co should return country=BR; REST Countries enriches to locale pt-BR.
+  # Scenario: Brazilian public IP (injected) + Portuguese message.
+  # Injected geo: country=BR, locale=pt-BR, timezone=America/Sao_Paulo.
   # reconcile(): active_lang=pt, locale=pt-BR → agreement → high confidence.
   # Expected: detected_country=BR, active_lang=pt, needs_review=false.
   #
@@ -49,12 +48,18 @@ cases:
   # locale enrichment), req-007 (high confidence on agreement), req-008
   # (deterministic reconciliation).
   #
-  # REAL ipapi.co call for IP 200.147.1.1 (Oi/Telemar, Brazil → BR).
+  # GEO INJECTED: no live ipapi.co call — deterministic for CI.
   # ---------------------------------------------------------------------------
   - name: orchestrator-and-fusion-002
     inputs:
       message: "Quais cursos de filosofia estão disponíveis neste semestre?"
       ip: "200.147.1.1"
+      geo:
+        country: BR
+        locale: pt-BR
+        timezone: America/Sao_Paulo
+        source: ipapi
+        ok: true
     expected_output:
       detected_country: BR
       active_lang: pt
@@ -65,9 +70,9 @@ cases:
       must_trip: []
       requirement: orchestrator-and-fusion-002
       geo_note: >-
-        REAL ipapi.co call. 200.147.1.1 is a stable Oi/Telemar (Brazil) IP;
-        ipapi.co maps it to country=BR. REST Countries enriches to locale pt-BR.
-        reconcile() detects pt locale matches active_lang=pt → high confidence.
+        GEO INJECTED (deterministic CI). Equivalent to: 200.147.1.1 Oi/Telemar
+        (Brazil) → country=BR, locale=pt-BR. reconcile() detects pt locale matches
+        active_lang=pt → high confidence → needs_review=false.
 
   # ---------------------------------------------------------------------------
   # orchestrator-and-fusion-010
@@ -81,6 +86,8 @@ cases:
   # Expected: detected_country=null, active_lang=en, needs_review=false.
   #
   # NO external call — loopback short-circuits before any HTTP request.
+  # NO geo injection needed: 127.0.0.1 is deterministic at the GeoFusionService
+  # level (ipaddress.ip_address("127.0.0.1").is_loopback → True).
   # Also covers: req-015 (flag=disabled shares the same null/no-review path).
   # ---------------------------------------------------------------------------
   - name: orchestrator-and-fusion-010
@@ -109,11 +116,10 @@ cases:
   # SYSTEM SHALL resolve it to an absolute value in the detected timezone within
   # final_normalized_text.
   #
-  # Scenario: Mexican public IP (189.210.1.1) + Spanish question containing the
+  # Scenario: Mexican public IP (injected) + Spanish question containing the
   # relative date word "mañana" (tomorrow).
-  # ipapi.co returns country=MX, timezone=America/Mexico_City; the orchestrator
-  # instruction injects locale=es-MX + timezone + "now" so the LLM resolves
-  # "mañana" to an absolute date in final_normalized_text.
+  # Injected geo: country=MX, locale=es-MX, timezone=America/Mexico_City.
+  # reconcile() detects es locale matches active_lang=es → high confidence.
   #
   # IMPORTANT — cannot assert exact final_normalized_text value:
   #   The absolute date depends on the wall-clock "now" at eval time (live run).
@@ -125,7 +131,7 @@ cases:
   #   For fully deterministic CI: inject a fixed "now" via settings/env override
   #   before running this case (see task.py run_turn docstring).
   #
-  # REAL ipapi.co call for IP 189.210.1.1 (Telmex/America Movil, Mexico → MX).
+  # GEO INJECTED: no live ipapi.co call — deterministic for CI.
   # Also covers: req-005 (final_normalized_text with locale applied), req-014
   # (final_normalized_text consistent with active_lang=es).
   # ---------------------------------------------------------------------------
@@ -133,6 +139,12 @@ cases:
     inputs:
       message: "¿El seminario de estoicismo es mañana a qué hora?"
       ip: "189.210.1.1"
+      geo:
+        country: MX
+        locale: es-MX
+        timezone: America/Mexico_City
+        source: ipapi
+        ok: true
     expected_output:
       active_lang: es
       detected_country: MX
@@ -143,9 +155,9 @@ cases:
       must_trip: []
       requirement: orchestrator-and-fusion-006
       geo_note: >-
-        REAL ipapi.co call. 189.210.1.1 is a stable Telmex/America Movil (Mexico)
-        IP; ipapi.co maps it to country=MX, timezone=America/Mexico_City. REST
-        Countries enriches to locale es-MX. reconcile() detects es locale matches
+        GEO INJECTED (deterministic CI). Equivalent to: 189.210.1.1
+        Telmex/America Movil (Mexico) → country=MX, locale=es-MX,
+        timezone=America/Mexico_City. reconcile() detects es locale matches
         active_lang=es → high confidence → needs_review=false.
       relative_date_note: >-
         The word "mañana" is a relative temporal expression. final_normalized_text
@@ -159,39 +171,43 @@ cases:
   # ---------------------------------------------------------------------------
   # orchestrator-and-fusion-011
   # Requirement: IF the resolved geo locale diverges from the session's active_lang
-  # THEN THE SYSTEM SHALL lower confidence_score AND set needs_review=true.
+  # THEN THE SYSTEM SHALL lower confidence_score (score *= 0.7) WITHOUT setting
+  # needs_review.  Geo divergence is a weak, DAMPING-only signal — expats and
+  # travellers writing in their own language abroad must not trigger human review.
   #
-  # Scenario: Brazilian IP (200.147.1.1) + English message.
-  # ipapi.co returns country=BR; REST Countries enriches to locale pt-BR.
-  # active_lang is detected as "en" (from the EN message).
-  # reconcile(): locale language "pt" ≠ active_lang "en" → divergence branch →
-  # confidence_score *= 0.6, needs_review=true.
-  # Expected: detected_country=BR, active_lang=en, needs_review=true.
+  # Scenario: ES message + injected US geo (locale=en-US).
+  # active_lang detected as "es" (from the ES message).
+  # Injected geo: country=US, locale=en-US, source=ipapi, ok=true.
+  # reconcile(): locale language "en" ≠ active_lang "es" → divergence branch →
+  # confidence_score *= 0.7, divergence=True, needs_review=false.
+  # Expected: detected_country=US, active_lang=es, needs_review=false.
   #
-  # Cache note (req-017): if orchestrator-and-fusion-002 ran first in the same
-  # process, the per-IP LRU cache returns the cached GeoContext for 200.147.1.1
-  # without a second ipapi.co call. This also validates caching behavior.
-  #
-  # REAL ipapi.co call (or cache hit) for IP 200.147.1.1.
+  # GEO INJECTED: no live ipapi.co call — deterministic for CI.
   # Also covers: req-008 (deterministic reconciliation divergence branch),
-  # req-009 (confidence damping), req-017 (per-IP cache reuse).
+  # req-009 (confidence damping), req-011 (divergence is DAMPING-only, not review).
   # ---------------------------------------------------------------------------
   - name: orchestrator-and-fusion-011
     inputs:
-      message: "What philosophy courses are available this semester?"
-      ip: "200.147.1.1"
+      message: "¿Cuáles son los cursos de filosofía disponibles este semestre?"
+      ip: "8.8.8.8"
+      geo:
+        country: US
+        locale: en-US
+        source: ipapi
+        ok: true
     expected_output:
-      detected_country: BR
-      active_lang: en
-      needs_review: true
+      detected_country: US
+      active_lang: es
+      needs_review: false
     metadata:
       suite: fusion
-      lang: en
+      lang: es
       must_trip: []
       requirement: orchestrator-and-fusion-011
       geo_note: >-
-        REAL ipapi.co call (or LRU cache hit if orchestrator-and-fusion-002 ran
-        first). 200.147.1.1 → BR, locale pt-BR. EN message → active_lang=en.
-        reconcile() detects locale-language pt ≠ active_lang en → divergence →
-        confidence_score *= 0.6, needs_review=true. Validates req-011 divergence
-        branch and req-017 per-IP cache behavior.
+        GEO INJECTED (deterministic CI). ES message → active_lang=es. Injected
+        geo: country=US, locale=en-US. reconcile() detects locale-language "en"
+        ≠ active_lang "es" → divergence → confidence_score *= 0.7,
+        needs_review=false (geo divergence is DAMPING-only per req-011; expats
+        and travellers writing in their own language abroad must not trigger
+        human review). Validates req-011 divergence branch deterministically.

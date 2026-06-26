@@ -6,11 +6,11 @@ Each test constructs a GeoContext + inputs and asserts the ReconcileResult field
 Requirement traceability:
   orchestrator-and-fusion-007  agreement (lang ≈ geo, ok, no divergence) → high score
   orchestrator-and-fusion-008  confidence_score computed deterministically; clamped [0,1]
-  orchestrator-and-fusion-009  geo.source="error" → score *= 0.7, needs_review=True
+  orchestrator-and-fusion-009  geo.source="error" → score *= 0.85; needs_review=False
   orchestrator-and-fusion-010  source="private_ip"/"disabled" → no penalty, no needs_review
-  orchestrator-and-fusion-011  geo locale primary lang ≠ active_lang → score *= 0.6,
-                               needs_review=True, divergence=True
-  orchestrator-and-fusion-012  source="ipapi", ok=False → needs_review (mild, no score penalty)
+  orchestrator-and-fusion-011  geo locale primary lang ≠ active_lang → score *= 0.7;
+                               needs_review=False; divergence=True
+  orchestrator-and-fusion-012  source="ipapi", ok=False → no penalty, no needs_review
   orchestrator-and-fusion-014  lang_fallback_used=True → needs_review=True
 """
 
@@ -138,13 +138,15 @@ class TestReconcile:
         assert result.divergence is False
 
     # ------------------------------------------------------------------
-    # req-011: divergence → score *= 0.6, needs_review=True, divergence=True
+    # req-011: divergence → score *= 0.7, needs_review=False, divergence=True
+    # Geo divergence DAMPS confidence but does NOT set needs_review — expats /
+    # travellers writing in their own language abroad are a normal case.
     # ------------------------------------------------------------------
 
     def test_divergence_geo_locale_ne_active_lang_damps_score(self) -> None:
         """pt-BR locale → primary_lang="pt" ≠ active_lang="es" → divergence.
 
-        score = 0.9 * 0.6 = 0.54.
+        score = 0.9 * 0.7 = 0.63.  needs_review stays False (geo-only signal).
 
         req: orchestrator-and-fusion-011
         """
@@ -155,12 +157,14 @@ class TestReconcile:
             lang_fallback_used=False,
         )
 
-        assert result.confidence_score == pytest.approx(0.9 * 0.6)
-        assert result.needs_review is True
+        assert result.confidence_score == pytest.approx(0.9 * 0.7)
+        assert result.needs_review is False
         assert result.divergence is True
 
     def test_divergence_es_locale_ne_pt_active_lang(self) -> None:
         """es-MX locale → primary_lang="es" ≠ active_lang="pt" → divergence.
+
+        score = 0.8 * 0.7.  needs_review stays False.
 
         req: orchestrator-and-fusion-011
         """
@@ -171,16 +175,18 @@ class TestReconcile:
             lang_fallback_used=False,
         )
 
-        assert result.confidence_score == pytest.approx(0.8 * 0.6)
-        assert result.needs_review is True
+        assert result.confidence_score == pytest.approx(0.8 * 0.7)
+        assert result.needs_review is False
         assert result.divergence is True
 
     # ------------------------------------------------------------------
-    # req-009: geo error → score *= 0.7, needs_review=True
+    # req-009: geo error → score *= 0.85, needs_review=False
+    # Geo-IP failure DAMPS confidence but does NOT set needs_review — a flaky
+    # geo-IP API is not a content-quality signal.
     # ------------------------------------------------------------------
 
     def test_geo_error_damps_score_and_sets_review(self) -> None:
-        """source="error" → score *= 0.7, needs_review=True, divergence=False.
+        """source="error" → score *= 0.85, needs_review=False, divergence=False.
 
         req: orchestrator-and-fusion-009
         """
@@ -191,8 +197,8 @@ class TestReconcile:
             lang_fallback_used=False,
         )
 
-        assert result.confidence_score == pytest.approx(0.8 * 0.7)
-        assert result.needs_review is True
+        assert result.confidence_score == pytest.approx(0.8 * 0.85)
+        assert result.needs_review is False
         assert result.divergence is False
 
     def test_geo_error_low_lang_confidence_still_clamped(self) -> None:
@@ -207,9 +213,9 @@ class TestReconcile:
             lang_fallback_used=False,
         )
 
-        assert result.confidence_score == pytest.approx(0.3 * 0.7)
+        assert result.confidence_score == pytest.approx(0.3 * 0.85)
         assert 0.0 <= result.confidence_score <= 1.0
-        assert result.needs_review is True
+        assert result.needs_review is False
 
     # ------------------------------------------------------------------
     # req-010: private_ip / disabled → no penalty, no needs_review
@@ -267,11 +273,12 @@ class TestReconcile:
         assert result.divergence is False
 
     # ------------------------------------------------------------------
-    # req-012: REST Countries fail (source="ipapi", ok=False) → needs_review, no score hit
+    # req-012: REST Countries fail (source="ipapi", ok=False) → no penalty, no needs_review
+    # REST Countries enrichment is best-effort; its failure does not affect turn quality.
     # ------------------------------------------------------------------
 
-    def test_rest_fail_sets_review_without_score_penalty(self) -> None:
-        """source="ipapi", ok=False → needs_review=True but confidence_score unchanged.
+    def test_rest_fail_no_penalty_no_review(self) -> None:
+        """source="ipapi", ok=False → confidence_score unchanged, needs_review=False.
 
         req: orchestrator-and-fusion-012
         """
@@ -282,9 +289,9 @@ class TestReconcile:
             lang_fallback_used=False,
         )
 
-        # Rule 4: ipapi+not ok → needs_review; no score multiplication.
+        # Rule 4: ipapi+not ok → no review, no score multiplication.
         assert result.confidence_score == pytest.approx(0.8)
-        assert result.needs_review is True
+        assert result.needs_review is False
         assert result.divergence is False
 
     # ------------------------------------------------------------------
@@ -308,7 +315,10 @@ class TestReconcile:
         assert result.divergence is False
 
     def test_lang_fallback_used_compounds_with_geo_error(self) -> None:
-        """geo error + lang_fallback both set needs_review; score damped once (geo-error).
+        """geo error damps score (*0.85); lang_fallback sets needs_review.
+
+        needs_review=True comes from lang_fallback_used only; geo-error alone
+        would NOT set needs_review under the new semantics.
 
         req: orchestrator-and-fusion-009, orchestrator-and-fusion-014
         """
@@ -319,7 +329,7 @@ class TestReconcile:
             lang_fallback_used=True,
         )
 
-        assert result.confidence_score == pytest.approx(0.6 * 0.7)
+        assert result.confidence_score == pytest.approx(0.6 * 0.85)
         assert result.needs_review is True
 
     # ------------------------------------------------------------------
@@ -358,8 +368,8 @@ class TestReconcile:
         ("lang_confidence", "geo", "active_lang", "fallback"),
         [
             (0.9, _GEO_OK_ES, "es", False),  # agreement
-            (0.9, _GEO_OK_BR, "es", False),  # divergence → *0.6
-            (0.8, _GEO_ERROR, "es", False),  # geo error → *0.7
+            (0.9, _GEO_OK_BR, "es", False),  # divergence → *0.7
+            (0.8, _GEO_ERROR, "es", False),  # geo error → *0.85
             (0.85, _GEO_PRIVATE, "en", False),  # private_ip
             (0.85, _GEO_DISABLED, "en", True),  # disabled + fallback
             (0.8, _GEO_IPAPI_RC_FAIL, "en", False),  # RC fail

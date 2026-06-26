@@ -373,3 +373,38 @@ class TestGeoFusionService:
         assert isinstance(geo, GeoContext)
         # "ZZ" is not a valid CountryAlpha2 code — should fall to source="error".
         assert geo.source == "error"
+
+    # ------------------------------------------------------------------
+    # req-017: error results must NOT be cached (transient failure fix)
+    # ------------------------------------------------------------------
+
+    async def test_error_result_is_not_cached(self) -> None:
+        """source="error" results must NOT populate the cache.
+
+        A transient ipapi.co failure (timeout, 5xx) on the first call must not
+        make that failure sticky.  A subsequent call with a working backend must
+        return source="ipapi" (fresh network call), not source="cache".
+
+        req: orchestrator-and-fusion-017 — only successful resolutions are cached
+        """
+        # First call: ipapi raises → source="error"
+        http_fail = _FakeHttp(ipapi_exc=httpx.ConnectError("transient failure"))
+        svc = _svc(http_fail)
+
+        geo_fail = await svc.resolve(_PUBLIC_IP)
+        assert geo_fail.source == "error"
+
+        # Cache must be empty — error result was NOT stored.
+        assert _PUBLIC_IP not in svc._cache, "source='error' result must not be stored in the cache"
+
+        # Second call on the SAME service instance with a working HTTP client.
+        # We swap the internal client to simulate recovery.
+        svc._http = _FakeHttp(ipapi_payload=_IPAPI_MX, rc_payload=_RC_MX)  # type: ignore[assignment]
+        geo_ok = await svc.resolve(_PUBLIC_IP)
+
+        # Fresh network call succeeds — NOT a stale cache entry.
+        assert geo_ok.source == "ipapi", (
+            f"Expected 'ipapi' on recovered call, got {geo_ok.source!r}"
+        )
+        assert str(geo_ok.country) == "MX"
+        assert geo_ok.ok is True

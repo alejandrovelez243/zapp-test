@@ -71,10 +71,13 @@ class TaskSuccess(Evaluator):
        Missing keys in output count as a failure.
 
     2. ``ctx.output["needs_review"]`` is ``False`` — the happy-path assumption —
-       UNLESS ``ctx.expected_output`` explicitly sets ``needs_review=True``, which
-       signals that the case is intentionally testing degraded / review-mode output
-       (e.g. unsupported-language fallback).  In that case the needs_review check is
-       waived (it is already covered by condition 1).
+       UNLESS ``ctx.expected_output`` explicitly declares a ``needs_review`` value
+       (``True`` or ``False``), in which case condition 1 (field-match loop) has
+       already verified it and no second gate is applied.  This ensures that Cases
+       expecting ``needs_review=True`` (e.g. unsupported-language fallback —
+       evaluation-020) are not wrongly failed by a hardcoded ``needs_review is False``
+       assertion, and that Cases explicitly asserting ``needs_review=False`` are not
+       double-checked redundantly.
 
     Returns True on full pass, False on any field mismatch or unexpected review flag.
 
@@ -92,9 +95,14 @@ class TaskSuccess(Evaluator):
             if out.get(key) != val:
                 return False
 
-        # 2. needs_review gate: assert False unless the case explicitly expects True.
-        expected_review: bool = bool(expected.get("needs_review", False))
-        return expected_review or out.get("needs_review") is False
+        # 2. needs_review gate: applies ONLY when expected_output does NOT specify
+        #    needs_review.  When the Case explicitly declares needs_review (True or
+        #    False), condition 1 above has already verified it; applying a second gate
+        #    here would wrongly fail Cases that legitimately expect needs_review=True
+        #    (e.g. unsupported-language fallback Cases — evaluation-020).
+        if "needs_review" not in expected:
+            return out.get("needs_review") is False
+        return True
 
 
 # ---------------------------------------------------------------------------

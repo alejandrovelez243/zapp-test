@@ -52,11 +52,18 @@ are set by code, never guessed by the model.
 - `def reconcile(geo, lang_confidence, active_lang, detection, lang_fallback_used) -> ReconcileResult`
   (`confidence_score: float`, `needs_review: bool`, `divergence: bool`). Pure function (req-008):
   - start `score = lang_confidence` (read from multilingual; this feature does not own it).
-  - `geo.ok and geo.country`: if the country's primary language is consistent with `active_lang` (or
-    unknown) → keep high; else **divergence** → `score *= 0.6`, `needs_review=True` (req-011).
-  - `geo.source == "error"` → `score *= 0.7`, `needs_review=True` (req-009).
-  - `geo.source in {"private_ip","disabled"}` → no penalty, no `needs_review` (expected) (req-010,-015).
-  - `lang_fallback_used` (unsupported language) → `needs_review=True` (preserve multilingual) (req-014).
+  - **Geo is best-effort enrichment: its signals DAMP `confidence_score` but NEVER force
+    `needs_review`.** `needs_review` is owned by the language + guardrail layers (the reply's
+    correctness is independent of geo; flagging every flaky geo-IP call or expat geo/language mismatch
+    would flood review).
+  - `geo.ok and geo.country`: primary language consistent with `active_lang` (or unknown) → keep high;
+    else **divergence** → `score *= 0.7`, `divergence=True`, NO `needs_review` (req-011).
+  - `geo.source == "error"` → `score *= 0.85`, NO `needs_review` (req-009).
+  - `geo.source == "ipapi" and not geo.ok` (REST enrichment failed) → default locale, no penalty, NO
+    `needs_review` (req-012).
+  - `geo.source in {"private_ip","disabled","cache"}` → no penalty, no `needs_review` (req-010,-015,-017).
+  - `lang_fallback_used` (unsupported language) → `needs_review=True` — the ONLY `needs_review` this
+    function sets, and a genuine language problem the multilingual layer also flags (req-014).
   - clamp `[0,1]`. High agreement (lang≈ + geo ok + no divergence) → high score (req-007).
 
 ### 2.3 `app/deps.py` (edit) — `AgentDeps.geo: GeoContext`
