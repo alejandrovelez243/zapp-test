@@ -48,8 +48,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.session import (
     ConversationSession,
     SessionGrade,
+    SessionRepository,
     _now_utc,
-    load_messages,
 )
 from app.config import get_settings
 from app.observability import get_posthog
@@ -182,7 +182,7 @@ async def evaluate_conversation(db: AsyncSession, session_id: str) -> None:
     """Grade a finished conversation, persist the result, and emit observability.
 
     Workflow:
-    1. Load ``message_history`` via ``load_messages``.
+    1. Load ``message_history`` via ``SessionRepository.load_messages``.
     2. Render a plain-text transcript.
     3. Call ``judge_text(transcript)`` -- structured int judge (1-5, temp 0).
     4. Persist :class:`~app.agents.session.SessionGrade` (score, needs_review,
@@ -204,7 +204,7 @@ async def evaluate_conversation(db: AsyncSession, session_id: str) -> None:
     req: evaluation-016, evaluation-017, evaluation-019
     """
     try:
-        messages = await load_messages(db, session_id)
+        messages = await SessionRepository(db).load_messages(session_id)
         transcript: str = _render_transcript(messages) if messages else "(no messages)"
 
         score: int = await judge_text(transcript)

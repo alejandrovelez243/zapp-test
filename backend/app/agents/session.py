@@ -1,4 +1,4 @@
-"""ConversationSession SQLModel table + persistence helpers.
+"""ConversationSession SQLModel table + SessionRepository.
 
 One row per chat session.  Loaded at the start of each ``/chat`` turn to recover the
 locked ``active_lang`` and the auto-switch counters; updated (committed) after the
@@ -6,11 +6,10 @@ orchestrator run completes.
 
 Task 7 adds:
   * ``history_json`` nullable column on :class:`ConversationSession`.
-  * :func:`get_or_create_session` — upsert-by-absent: returns an existing session or
-    inserts a new one and flushes it into the current transaction.
-  * :func:`update_session` — persists language-state fields + bumps ``updated_at``.
-  * :func:`load_messages` / :func:`save_messages` — round-trip the agent's
-    ``result.all_messages()`` via ``ModelMessagesTypeAdapter`` into ``history_json``.
+  * :class:`SessionRepository` — stateful repository that owns an
+    :class:`~sqlalchemy.ext.asyncio.AsyncSession` and exposes four async methods:
+    :meth:`~SessionRepository.get_or_create`, :meth:`~SessionRepository.update_language_state`,
+    :meth:`~SessionRepository.load_messages`, :meth:`~SessionRepository.save_messages`.
 
 Requirement: multilingual-007
 """
@@ -149,108 +148,123 @@ class SessionGrade(SQLModel, table=True):
 
 
 # ---------------------------------------------------------------------------
-# Persistence helpers
+# Repository
 # ---------------------------------------------------------------------------
 
 
-async def get_or_create_session(
-    db: AsyncSession,
-    session_id: str,
-) -> ConversationSession:
-    """Return the existing :class:`ConversationSession` or insert a fresh one.
+class SessionRepository:
+    """Stateful repository for :class:`ConversationSession` persistence.
 
-    If no row exists for *session_id* a new :class:`ConversationSession` is created
-    with ``created_at``/``updated_at`` set to UTC-now, added to *db*, and flushed into
-    the current transaction (so subsequent helpers in the same request see it).
-
-    The caller (FastAPI boundary, Task 9) owns the final ``commit``.
+    Binds a single :class:`~sqlalchemy.ext.asyncio.AsyncSession` at construction
+    time and exposes the four async persistence operations as instance methods.
+    The caller (FastAPI boundary, background task) owns the ``db`` lifecycle and
+    the final ``commit``; this class only flushes within each operation.
 
     Requirement: multilingual-007
     """
-    stmt = select(ConversationSession).where(ConversationSession.id == session_id)  # type: ignore[arg-type]
-    result = await db.execute(stmt)
-    existing: ConversationSession | None = result.scalar_one_or_none()
-    if existing is not None:
-        return existing
 
-    now = _now_utc()
-    new_session = ConversationSession(
-        id=session_id,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(new_session)
-    await db.flush()  # make the row visible within this transaction
-    return new_session
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
 
+    async def get_or_create(self, session_id: str) -> ConversationSession:
+        """Return the existing :class:`ConversationSession` or insert a fresh one.
 
-async def update_session(
-    db: AsyncSession,
-    session: ConversationSession,
-    *,
-    active_lang: str | None,
-    last_supported_lang: str | None,
-    pending_switch_lang: str | None,
-    pending_switch_count: int,
-) -> None:
-    """Persist language-state fields on *session* and bump ``updated_at``.
+        If no row exists for *session_id* a new :class:`ConversationSession` is
+        created with ``created_at``/``updated_at`` set to UTC-now, added to the
+        session, and flushed into the current transaction (so subsequent calls in
+        the same request see it).
 
-    All four language-state fields are written (callers always supply the full current
-    state after ``resolve_active_lang``).  The caller owns the final ``commit``.
+        The caller owns the final ``commit``.
 
-    Requirement: multilingual-007
-    """
-    session.active_lang = active_lang
-    session.last_supported_lang = last_supported_lang
-    session.pending_switch_lang = pending_switch_lang
-    session.pending_switch_count = pending_switch_count
-    session.updated_at = _now_utc()
-    db.add(session)
-    await db.flush()
+        Requirement: multilingual-007
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        existing: ConversationSession | None = result.scalar_one_or_none()
+        if existing is not None:
+            return existing
 
+        now = _now_utc()
+        new_session = ConversationSession(
+            id=session_id,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(new_session)
+        await self.db.flush()  # make the row visible within this transaction
+        return new_session
 
-async def load_messages(
-    db: AsyncSession,
-    session_id: str,
-) -> list[ModelMessage] | None:
-    """Return the persisted message history for *session_id*, or ``None`` if absent.
+    async def update_language_state(
+        self,
+        session: ConversationSession,
+        *,
+        active_lang: str | None,
+        last_supported_lang: str | None,
+        pending_switch_lang: str | None,
+        pending_switch_count: int,
+    ) -> None:
+        """Persist language-state fields on *session* and bump ``updated_at``.
 
-    Deserialises ``history_json`` via ``ModelMessagesTypeAdapter.validate_json``.
-    Returns ``None`` when the row does not exist or ``history_json`` is null/empty —
-    callers pass the result directly as ``message_history=`` to the agent run (``None``
-    starts a fresh context, consistent with the pydantic-ai convention).
+        All four language-state fields are written (callers always supply the full
+        current state after ``resolve_active_lang``).  The caller owns the final
+        ``commit``.
 
-    Requirement: multilingual-007
-    """
-    stmt = select(ConversationSession).where(ConversationSession.id == session_id)  # type: ignore[arg-type]
-    result = await db.execute(stmt)
-    row: ConversationSession | None = result.scalar_one_or_none()
-    if row is None or not row.history_json:
-        return None
-    return ModelMessagesTypeAdapter.validate_json(row.history_json)
+        Requirement: multilingual-007
+        """
+        session.active_lang = active_lang
+        session.last_supported_lang = last_supported_lang
+        session.pending_switch_lang = pending_switch_lang
+        session.pending_switch_count = pending_switch_count
+        session.updated_at = _now_utc()
+        self.db.add(session)
+        await self.db.flush()
 
+    async def load_messages(self, session_id: str) -> list[ModelMessage] | None:
+        """Return the persisted message history for *session_id*, or ``None``.
 
-async def save_messages(
-    db: AsyncSession,
-    session_id: str,
-    messages: list[ModelMessage],
-) -> None:
-    """Serialise *messages* and store them in the ``history_json`` column.
+        Deserialises ``history_json`` via ``ModelMessagesTypeAdapter.validate_json``.
+        Returns ``None`` when the row does not exist or ``history_json`` is
+        null/empty — callers pass the result directly as ``message_history=`` to
+        the agent run (``None`` starts a fresh context, consistent with the
+        pydantic-ai convention).
 
-    Serialises via ``ModelMessagesTypeAdapter.dump_json`` (returns ``bytes``), decodes
-    to UTF-8 ``str``, and stores in ``history_json`` on the existing session row.
+        Requirement: multilingual-007
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None or not row.history_json:
+            return None
+        return ModelMessagesTypeAdapter.validate_json(row.history_json)
 
-    Raises ``ValueError`` if no row exists for *session_id* — callers must call
-    :func:`get_or_create_session` before :func:`save_messages`.  The caller owns the
-    final ``commit``.
+    async def save_messages(
+        self,
+        session_id: str,
+        messages: list[ModelMessage],
+    ) -> None:
+        """Serialise *messages* and store them in the ``history_json`` column.
 
-    Requirement: multilingual-007
-    """
-    stmt = select(ConversationSession).where(ConversationSession.id == session_id)  # type: ignore[arg-type]
-    result = await db.execute(stmt)
-    row: ConversationSession | None = result.scalar_one_or_none()
-    if row is None:
-        raise ValueError(f"Session {session_id!r} not found; call get_or_create_session first.")
-    row.history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
-    db.add(row)
-    await db.flush()
+        Serialises via ``ModelMessagesTypeAdapter.dump_json`` (returns ``bytes``),
+        decodes to UTF-8 ``str``, and stores in ``history_json`` on the existing
+        session row.
+
+        Raises ``ValueError`` if no row exists for *session_id* — callers must call
+        :meth:`get_or_create` before :meth:`save_messages`.  The caller owns the
+        final ``commit``.
+
+        Requirement: multilingual-007
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None:
+            raise ValueError(f"Session {session_id!r} not found; call get_or_create first.")
+        row.history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
+        self.db.add(row)
+        await self.db.flush()

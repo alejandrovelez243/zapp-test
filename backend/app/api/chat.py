@@ -9,7 +9,7 @@ gracefully (never returns a 500 for model errors).
 
 Requirements satisfied:
   multilingual-001 — emit the full nine-field TurnOutput on every /chat turn
-  multilingual-004 — first-turn active_lang lock persisted via update_session
+  multilingual-004 — first-turn active_lang lock persisted via update_language_state
   multilingual-008 — locked + unsupported → keep active_lang, still persisted
   multilingual-009 — first-turn unsupported → fallback "en", session persisted
   guardrails-001 — input guardrails run before the agent; output guardrails run after
@@ -46,12 +46,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import degraded_turn, get_orchestrator
-from app.agents.session import (
-    get_or_create_session,
-    load_messages,
-    save_messages,
-    update_session,
-)
+from app.agents.session import SessionRepository
 from app.config import get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.db import get_session, get_sessionmaker
@@ -128,7 +123,8 @@ async def chat(
 
         # 2. Load or create the ConversationSession row.
         #    req: multilingual-007
-        session = await get_or_create_session(db, req.session_id)
+        repo = SessionRepository(db)
+        session = await repo.get_or_create(req.session_id)
 
         # 3. Decide active_lang via the state machine (pure, no I/O).
         #    req: multilingual-003, multilingual-004, multilingual-008, multilingual-009
@@ -151,8 +147,7 @@ async def chat(
             # coherent, then return a safe TurnOutput WITHOUT calling the orchestrator.
             # The LLM is never reached — this path works with no gateway key.
             # req: guardrails-003, guardrails-004, guardrails-005, guardrails-012
-            await update_session(
-                db,
+            await repo.update_language_state(
                 session,
                 active_lang=decision.active_lang,
                 last_supported_lang=(
@@ -202,7 +197,7 @@ async def chat(
         # 6. Load message history for session coherence.
         #    Only reached when input guardrails did NOT block.
         #    req: multilingual-007
-        history = await load_messages(db, req.session_id)
+        history = await repo.load_messages(req.session_id)
 
         # 7. Run the orchestrator inside a per-request httpx client so every outbound
         #    geo/locale call in the agent run is captured in one Logfire span via
@@ -243,8 +238,7 @@ async def chat(
                 type(exc).__name__,
                 exc,
             )
-            await update_session(
-                db,
+            await repo.update_language_state(
                 session,
                 active_lang=decision.active_lang,
                 last_supported_lang=(
@@ -260,8 +254,7 @@ async def chat(
         else:
             # 8. Persist language state + full message history.
             #    req: multilingual-007
-            await update_session(
-                db,
+            await repo.update_language_state(
                 session,
                 active_lang=decision.active_lang,
                 last_supported_lang=(
@@ -272,7 +265,7 @@ async def chat(
                 pending_switch_lang=decision.pending_switch_lang,
                 pending_switch_count=decision.pending_switch_count,
             )
-            await save_messages(db, req.session_id, result.all_messages())
+            await repo.save_messages(req.session_id, result.all_messages())
             await db.commit()
 
             # 9. Capture the structured output emitted by the output_validator.
