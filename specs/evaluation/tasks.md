@@ -36,7 +36,7 @@ Drive task-by-task via `/implement evaluation`.
 
 - [x] 12. Add the eval-gate to `.github/workflows/ci.yml` — a step `uv run python -m evals.run` on push/PR with `PYDANTIC_AI_GATEWAY_API_KEY` from GitHub Secrets and the CI judge id; the pipeline fails on non-zero exit. — _req: evaluation-012 — owner: devops-engineer_
 
-- [ ] 13. Add tests: `run.py` threshold/exit logic (mocked metrics → assert `SystemExit`), each evaluator on sample outputs, the structured judge via `TestModel`, `is_goodbye` (ES/EN/PT), `evaluate_conversation` (TestModel + aiosqlite in-memory), and the sweep `graded_at` guard. — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-008, evaluation-014, evaluation-015, evaluation-016, evaluation-017, evaluation-018, evaluation-019, evaluation-020 — owner: eval-engineer_
+- [x] 13. Add tests: `run.py` threshold/exit logic (mocked metrics → assert `SystemExit`), each evaluator on sample outputs, the structured judge via `TestModel`, `is_goodbye` (ES/EN/PT), `evaluate_conversation` (TestModel + aiosqlite in-memory), and the sweep `graded_at` guard. — _req: evaluation-002, evaluation-003, evaluation-004, evaluation-005, evaluation-008, evaluation-014, evaluation-015, evaluation-016, evaluation-017, evaluation-018, evaluation-019, evaluation-020 — owner: eval-engineer_
 
 ## Coverage
 
