@@ -11,6 +11,7 @@ import pytest
 
 from app.agents.orchestrator import get_orchestrator
 from app.config import get_settings
+from app.guardrails.llm import get_guardrail_classifier
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +37,19 @@ def _clear_orchestrator_cache() -> Generator[None, None, None]:
     get_orchestrator.cache_clear()
     yield
     get_orchestrator.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _clear_guardrail_classifier_cache() -> Generator[None, None, None]:
+    """Clear the lru_cache on get_guardrail_classifier before and after every test.
+
+    Pre-test clear: ensures the classifier agent is re-constructed with the test's
+    env vars (including any monkeypatched values such as GUARDRAILS_LLM_ENABLED).
+    Post-test clear: prevents a stale agent instance from leaking into the next test.
+    """
+    get_guardrail_classifier.cache_clear()
+    yield
+    get_guardrail_classifier.cache_clear()
 
 
 @pytest.fixture(autouse=True)

@@ -42,6 +42,7 @@ from app.guardrails.detectors import (
     detect_toxicity,
     redact_pii,
 )
+from app.guardrails.llm import classify_input
 
 __all__ = ["GuardrailResult", "run_input_guardrails", "run_output_guardrails"]
 
@@ -124,7 +125,7 @@ def _detect_safe(
 # ---------------------------------------------------------------------------
 
 
-def run_input_guardrails(
+async def run_input_guardrails(
     message: str,
     active_lang: str,
     settings: Settings,
@@ -154,6 +155,13 @@ def run_input_guardrails(
     :func:`_detect_safe` so any unexpected exception causes ``action="block"`` rather
     than letting the turn proceed unchecked (guardrails-019).
 
+    WHERE ``settings.guardrails_llm_enabled`` is ``True``, the deterministic result is
+    AUGMENTED (union) with the optional LLM classifier verdict via
+    :func:`~app.guardrails.llm.classify_input`.  The LLM layer never replaces or
+    weakens a deterministic block — it can only add names and upgrade severity.
+    Default off (``guardrails_llm_enabled=False``) ⇒ zero LLM call, no key needed,
+    identical behaviour to the previous synchronous path (guardrails-015).
+
     Args:
         message:     The raw user message text.
         active_lang: ISO 639-1 code of the session's active language; forwarded to the
@@ -165,7 +173,7 @@ def run_input_guardrails(
         A :class:`GuardrailResult` describing the aggregate guardrail outcome.
 
     req: guardrails-003, guardrails-004, guardrails-005, guardrails-006, guardrails-007,
-         guardrails-016, guardrails-019
+         guardrails-015, guardrails-016, guardrails-019
     """
     # guardrails-016: master kill-switch — skip all checks when disabled.
     if not settings.guardrails_enabled:
@@ -210,6 +218,28 @@ def run_input_guardrails(
     is_off_topic: bool = detect_off_topic(message)
     if is_off_topic:
         triggered.append("off_topic")
+
+    # ------------------------------------------------------------------ #
+    # Optional LLM augmentation — req: guardrails-015
+    # AUGMENT (union) only — NEVER replace or weaken a deterministic block.
+    # Default off (guardrails_llm_enabled=False) ⇒ classify_input returns set()
+    # immediately with no gateway call, so this branch is effectively a no-op and
+    # the function's behaviour is identical to its previous synchronous form.
+    # ------------------------------------------------------------------ #
+
+    if settings.guardrails_llm_enabled:
+        llm_extra: set[str] = await classify_input(message, settings)
+        existing: set[str] = set(triggered)
+        for name in llm_extra - existing:
+            triggered.append(name)
+        # Re-derive blocking/flag booleans from the extended triggered set so the
+        # per-category policy below reflects both deterministic AND LLM verdicts.
+        # Union only: OR preserves deterministic True; LLM can upgrade False to True.
+        triggered_names: set[str] = set(triggered)
+        is_injection = is_injection or "prompt_injection" in triggered_names
+        is_jailbreak = is_jailbreak or "jailbreak" in triggered_names
+        is_toxic = is_toxic or "toxicity" in triggered_names
+        is_off_topic = is_off_topic or "off_topic" in triggered_names
 
     # ------------------------------------------------------------------ #
     # Per-category policy: block > redact > flag > clean
