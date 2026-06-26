@@ -99,6 +99,26 @@ class Settings(BaseSettings):
     # guardrail layer. Default off — the deterministic core is sufficient for production.
     guardrails_llm_enabled: bool = False
 
+    # --- Geo / Signal-Fusion (req: orchestrator-and-fusion-015, orchestrator-and-fusion-016) ---
+    # When False, the geo-IP call is skipped entirely and detected_country is set to null
+    # without error (useful in offline/dev environments).
+    # req: orchestrator-and-fusion-015
+    geo_fusion_enabled: bool = True
+    # When False, the REST Countries locale-enrichment call is skipped; the service falls
+    # back to default_locale / default_timezone for the detected country.
+    # req: orchestrator-and-fusion-016
+    rest_countries_enabled: bool = True
+    # Base URL for the ipapi.co geo-IP API (keyless).
+    ipapi_base_url: str = "https://ipapi.co"
+    # Base URL for the REST Countries v3.1 API.
+    rest_countries_base_url: str = "https://restcountries.com/v3.1"
+    # HTTP timeout (seconds) applied to every outbound geo / locale enrichment call.
+    geo_timeout: float = 3.0
+    # Locale applied when REST Countries enrichment is skipped or fails.
+    default_locale: str = "en-US"
+    # Timezone applied when REST Countries enrichment is skipped or fails.
+    default_timezone: str = "UTC"
+
 
 @lru_cache
 def get_settings() -> Settings:
