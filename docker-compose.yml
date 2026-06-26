@@ -1,0 +1,89 @@
+# Local runtime for the Zapp Global Philosophy School platform — one-command boot.
+#
+#   docker compose up --build      # db + backend + frontend
+#   docker compose up -d db backend  # db + backend only (frontend needs Task 15)
+#
+# req: platform-scaffold-004 (one-command local runtime),
+#      platform-scaffold-005 (pgvector DB so dev ≈ prod / Railway pgvector template),
+#      platform-scaffold-006 (auto-migration on boot creates the `vector` extension).
+#
+# No top-level `version:` key — it is obsolete under the Compose Spec and emits a warning.
+name: zapp
+
+services:
+  # --- Database -----------------------------------------------------------------
+  # pgvector/pgvector:pg16 (NOT plain postgres): local MUST ship the `vector`
+  # extension so the baseline migration's CREATE EXTENSION succeeds, mirroring
+  # Railway's pgvector template (dev ≈ prod). (req -005)
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: zapp
+      POSTGRES_PASSWORD: zapp
+      POSTGRES_DB: zapp
+    volumes:
+      # Named volume persists data across `docker compose up/down` (cleared by `down -v`).
+      - pgdata:/var/lib/postgresql/data
+    # Gate dependents on real readiness — pg_isready, not just "container started".
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zapp -d zapp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    # Uncomment to reach the DB from the host (e.g. local psql / a GUI):
+    # ports:
+    #   - "5432:5432"
+
+  # --- Backend (FastAPI + uv) ---------------------------------------------------
+  # The image CMD already runs `uv run alembic upgrade head` (CREATE EXTENSION vector
+  # + schema) THEN `uvicorn` — see backend/Dockerfile. We intentionally DO NOT set a
+  # `command:` override here (design.md §3.10 sketches one, but duplicating it would
+  # let the compose copy drift from the image's authoritative migrate-then-serve CMD).
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    # An optional real .env (authored in Task 14) is layered in when present so it can
+    # supply LOGFIRE_TOKEN / POSTHOG_KEY / IPINFO_TOKEN etc. without enumerating them
+    # here. required:false lets `docker compose up` work BEFORE that file exists.
+    env_file:
+      - path: .env
+        required: false
+    # get_settings() REQUIRES database_url + anthropic_api_key + admin_token to even
+    # construct, and the migrate-on-boot step calls it — so all three must be present
+    # or the container crashes immediately. Compose precedence is `environment` >
+    # `env_file`, so we use `${VAR:-default}` interpolation: a real root .env (auto-
+    # loaded by Compose for interpolation) OVERRIDES these dev defaults, while a clean
+    # checkout with no .env still boots on the placeholders below.
+    #   - DATABASE_URL points at the `db` SERVICE hostname (not localhost) on the
+    #     compose network; a .env override for compose use should keep host=`db`.
+    #   - ANTHROPIC_API_KEY / ADMIN_TOKEN are throwaway dev placeholders: the stub
+    #     /chat makes no LLM call and migrations need no real key.
+    #   - LOGFIRE_TOKEN / POSTHOG_KEY left unset on purpose -> observability no-ops.
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://zapp:zapp@db:5432/zapp}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-dev-placeholder}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin}
+    ports:
+      - "8000:8000"
+
+  # --- Frontend (Next.js + pnpm) — AUTHORED, not yet buildable -------------------
+  # NOTE: frontend/ has no package.json/pnpm-lock.yaml until Task 15, so this service
+  # cannot build/start yet. It is defined now so the one-command UX is captured. Bring
+  # up db+backend only for now:  `docker compose up -d db backend`.
+  # NEXT_PUBLIC_API_URL is read by the BROWSER (host side), so it points at the host-
+  # published backend port (localhost:8000), not the in-network `backend` hostname.
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    command: pnpm dev
+
+volumes:
+  pgdata:
