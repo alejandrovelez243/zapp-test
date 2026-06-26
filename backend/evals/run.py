@@ -7,10 +7,10 @@ CI (uses the cheaper JUDGE_MODEL_CI):
     EVAL_CI=1 uv run python -m evals.run
 
 Architecture (evaluation-001, evaluation-008, evaluation-009):
-1. Load three committed YAML datasets (happy, multilingual, adversarial).
-2. Attach evaluators by ``metadata.suite``:
-       happy / multilingual → TaskSuccess + LanguageFidelity + SubjectiveQualityJudge
-       adversarial          → GuardrailHit + SubjectiveQualityJudge
+1. Load four committed YAML datasets (happy, multilingual, adversarial, fusion).
+2. Attach evaluators by suite:
+       happy / multilingual / fusion → TaskSuccess + LanguageFidelity + SubjectiveQualityJudge
+       adversarial                   → GuardrailHit + SubjectiveQualityJudge
 3. Run ``dataset.evaluate_sync(run_turn)`` for each suite.
 4. Compute aggregate metrics (evaluation-002 through -006).
 5. Render ONE markdown report to ``evals/reports/latest-report.md`` (evaluation-009).
@@ -96,19 +96,26 @@ if os.environ.get("EVAL_CI") == "1":
 
 
 def _load_and_annotate_datasets() -> dict[str, Dataset]:
-    """Load the three committed YAML datasets and attach evaluators by suite.
+    """Load the four committed YAML datasets and attach evaluators by suite.
 
     Evaluator assignment (design.md §3.5):
-    - happy / multilingual: TaskSuccess + LanguageFidelity + SubjectiveQualityJudge
-    - adversarial: GuardrailHit + SubjectiveQualityJudge
+    - happy / multilingual / fusion: TaskSuccess + LanguageFidelity + SubjectiveQualityJudge
+    - adversarial:                   GuardrailHit + SubjectiveQualityJudge
+
+    The ``fusion`` dataset (evals/datasets/fusion.yaml) holds geo/signal-fusion Cases
+    for orchestrator-and-fusion-001..017; it is treated identically to the happy suite
+    for metric aggregation purposes.
 
     Returns a dict keyed by suite name.
     """
     happy = Dataset.from_file(DATASETS_DIR / "happy.yaml")
     multilingual = Dataset.from_file(DATASETS_DIR / "multilingual.yaml")
     adversarial = Dataset.from_file(DATASETS_DIR / "adversarial.yaml")
+    # Task 8 (orchestrator-and-fusion): geo/fusion Cases with real ipapi.co calls.
+    # Keep this dataset small (see fusion.yaml header comment on rate-limit risk).
+    fusion = Dataset.from_file(DATASETS_DIR / "fusion.yaml")
 
-    for ds in (happy, multilingual):
+    for ds in (happy, multilingual, fusion):
         ds.add_evaluator(TaskSuccess())
         ds.add_evaluator(LanguageFidelity())
         ds.add_evaluator(SubjectiveQualityJudge())
@@ -116,7 +123,12 @@ def _load_and_annotate_datasets() -> dict[str, Dataset]:
     adversarial.add_evaluator(GuardrailHit())
     adversarial.add_evaluator(SubjectiveQualityJudge())
 
-    return {"happy": happy, "multilingual": multilingual, "adversarial": adversarial}
+    return {
+        "happy": happy,
+        "multilingual": multilingual,
+        "adversarial": adversarial,
+        "fusion": fusion,
+    }
 
 
 def _run_datasets(
@@ -147,7 +159,7 @@ def _extract_assertion(case: Any, key: str) -> bool | None:
 def _compute_metrics(
     reports: dict[str, EvaluationReport],
 ) -> dict[str, float]:
-    """Aggregate all metrics from the three suite reports.
+    """Aggregate all metrics from the four suite reports.
 
     Returns a flat dict with keys matching THRESHOLDS plus informational extras
     (latency_p50_ms).
@@ -156,24 +168,34 @@ def _compute_metrics(
     report.cases but without a score key → score treated as 0 (not-passing).
     Task-level failures (run_turn raised) land in report.failures → counted as
     failed for task_success, language_fidelity, and judge_mean.
+
+    Suite groups:
+    - task_success / language_fidelity: happy + multilingual + fusion
+    - guardrail precision/recall:       adversarial only
+    - judge_mean / latency / cost:      all four suites
     """
     happy_r = reports["happy"]
     ml_r = reports["multilingual"]
     adv_r = reports["adversarial"]
+    # fusion suite is optional at load time (reports.get returns None if absent);
+    # using .get() ensures backwards-compatibility if fusion.yaml is removed.
+    fusion_r = reports.get("fusion")
 
     happy_cases = list(happy_r.cases)
     ml_cases = list(ml_r.cases)
     adv_cases = list(adv_r.cases)
+    fusion_cases = list(fusion_r.cases) if fusion_r is not None else []
 
     happy_fails = list(happy_r.failures)
     ml_fails = list(ml_r.failures)
     adv_fails = list(adv_r.failures)
+    fusion_fails = list(fusion_r.failures) if fusion_r is not None else []
 
     # -----------------------------------------------------------------------
-    # 1. Task success rate — happy + multilingual  (evaluation-002)
+    # 1. Task success rate — happy + multilingual + fusion  (evaluation-002)
     # -----------------------------------------------------------------------
-    task_cases = happy_cases + ml_cases
-    task_fail_count = len(happy_fails) + len(ml_fails)
+    task_cases = happy_cases + ml_cases + fusion_cases
+    task_fail_count = len(happy_fails) + len(ml_fails) + len(fusion_fails)
     total_task = len(task_cases) + task_fail_count
 
     task_pass = sum(1 for c in task_cases if _extract_assertion(c, "TaskSuccess") is True)
@@ -216,8 +238,8 @@ def _compute_metrics(
     # -----------------------------------------------------------------------
     # 4. LLM judge mean (1-5) — all suites  (evaluation-005, evaluation-019)
     # -----------------------------------------------------------------------
-    all_cases = happy_cases + ml_cases + adv_cases
-    total_fail_count = len(happy_fails) + len(ml_fails) + len(adv_fails)
+    all_cases = happy_cases + ml_cases + adv_cases + fusion_cases
+    total_fail_count = len(happy_fails) + len(ml_fails) + len(adv_fails) + len(fusion_fails)
 
     judge_scores: list[float] = []
     for c in all_cases:

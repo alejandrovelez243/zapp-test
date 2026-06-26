@@ -1,0 +1,197 @@
+# backend/evals/datasets/fusion.yaml
+#
+# Geo/fusion eval Cases for pydantic-evals.
+# 4 Cases mapping 1:1 to specs/orchestrator-and-fusion/requirements.md criteria.
+# These Cases exercise the geo-IP + REST Countries fusion path introduced in
+# orchestrator-and-fusion Tasks 2, 5, 6, 7 — verified here in Task 8.
+#
+# EXTERNAL DEPENDENCY WARNING:
+#   Cases orchestrator-and-fusion-002, orchestrator-and-fusion-006, and
+#   orchestrator-and-fusion-011 resolve geo via a REAL ipapi.co call (keyless, free
+#   tier, HTTPS).  Keep this file's real-geo Case count small (currently 3 unique
+#   IP addresses) to bound flakiness and rate-limit risk.  The per-IP LRU cache
+#   (req-017) means orchestrator-and-fusion-011 may reuse the resolved result from
+#   orchestrator-and-fusion-002 if run in the same process (both share 200.147.1.1).
+#   Case orchestrator-and-fusion-010 (private/loopback IP) makes NO external call.
+#
+# IP provenance — stable, well-known ISP allocations:
+#   200.147.1.1  — Oi/Telemar Telecomunicacoes (Brazil, LACNIC) → ipapi.co: BR
+#   189.210.1.1  — America Movil/Telmex (Mexico, LACNIC)         → ipapi.co: MX
+#   127.0.0.1    — loopback; GeoFusionService short-circuits, no external call
+#
+# Evaluators attached by run.py (suite: fusion):
+#   TaskSuccess, LanguageFidelity, SubjectiveQualityJudge
+#
+# Case-id mapping (requirement → Case name, 1:1 per SKILL.md):
+#   orchestrator-and-fusion-002 → orchestrator-and-fusion-002
+#   orchestrator-and-fusion-006 → orchestrator-and-fusion-006
+#   orchestrator-and-fusion-010 → orchestrator-and-fusion-010
+#   orchestrator-and-fusion-011 → orchestrator-and-fusion-011
+#
+# Satisfies: orchestrator-and-fusion-001..017 (eval coverage — partial;
+# requirements 003,004,005,007,008,009,012,013,014,015,016,017 are covered
+# structurally by these Cases exercising the full fusion pipeline; Task 10 does the
+# live verification pass with PYDANTIC_AI_GATEWAY_API_KEY).
+
+cases:
+
+  # ---------------------------------------------------------------------------
+  # orchestrator-and-fusion-002
+  # Requirement: WHEN a turn is processed THE SYSTEM SHALL resolve detected_country
+  # (ISO 3166-1 alpha-2) from a geo-IP lookup on the request IP.
+  #
+  # Scenario: Brazilian public IP (200.147.1.1) + Portuguese message.
+  # ipapi.co should return country=BR; REST Countries enriches to locale pt-BR.
+  # reconcile(): active_lang=pt, locale=pt-BR → agreement → high confidence.
+  # Expected: detected_country=BR, active_lang=pt, needs_review=false.
+  #
+  # Also covers: req-001 (three fusion fields populated), req-004 (REST Countries
+  # locale enrichment), req-007 (high confidence on agreement), req-008
+  # (deterministic reconciliation).
+  #
+  # REAL ipapi.co call for IP 200.147.1.1 (Oi/Telemar, Brazil → BR).
+  # ---------------------------------------------------------------------------
+  - name: orchestrator-and-fusion-002
+    inputs:
+      message: "Quais cursos de filosofia estão disponíveis neste semestre?"
+      ip: "200.147.1.1"
+    expected_output:
+      detected_country: BR
+      active_lang: pt
+      needs_review: false
+    metadata:
+      suite: fusion
+      lang: pt
+      must_trip: []
+      requirement: orchestrator-and-fusion-002
+      geo_note: >-
+        REAL ipapi.co call. 200.147.1.1 is a stable Oi/Telemar (Brazil) IP;
+        ipapi.co maps it to country=BR. REST Countries enriches to locale pt-BR.
+        reconcile() detects pt locale matches active_lang=pt → high confidence.
+
+  # ---------------------------------------------------------------------------
+  # orchestrator-and-fusion-010
+  # Requirement: IF the request IP is private, loopback, or invalid THEN THE
+  # SYSTEM SHALL set detected_country=null AND skip the external geo call.
+  #
+  # Scenario: loopback IP (127.0.0.1) + English message.
+  # GeoFusionService short-circuits immediately (ipaddress check) and returns
+  # GeoContext(source="private_ip", ok=False, country=None).
+  # reconcile(): source="private_ip" → no penalty, no needs_review.
+  # Expected: detected_country=null, active_lang=en, needs_review=false.
+  #
+  # NO external call — loopback short-circuits before any HTTP request.
+  # Also covers: req-015 (flag=disabled shares the same null/no-review path).
+  # ---------------------------------------------------------------------------
+  - name: orchestrator-and-fusion-010
+    inputs:
+      message: "What philosophy programs does the school offer?"
+      ip: "127.0.0.1"
+    expected_output:
+      detected_country: null
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: fusion
+      lang: en
+      must_trip: []
+      requirement: orchestrator-and-fusion-010
+      geo_note: >-
+        Loopback/private IP. GeoFusionService.resolve() short-circuits via
+        ipaddress check — no HTTP call to ipapi.co. Returns
+        GeoContext(source="private_ip", ok=False, country=None).
+        reconcile() applies no penalty and does NOT set needs_review (expected
+        behavior for dev/private IPs per design.md §6).
+
+  # ---------------------------------------------------------------------------
+  # orchestrator-and-fusion-006
+  # Requirement: WHEN the user message contains a relative temporal expression THE
+  # SYSTEM SHALL resolve it to an absolute value in the detected timezone within
+  # final_normalized_text.
+  #
+  # Scenario: Mexican public IP (189.210.1.1) + Spanish question containing the
+  # relative date word "mañana" (tomorrow).
+  # ipapi.co returns country=MX, timezone=America/Mexico_City; the orchestrator
+  # instruction injects locale=es-MX + timezone + "now" so the LLM resolves
+  # "mañana" to an absolute date in final_normalized_text.
+  #
+  # IMPORTANT — cannot assert exact final_normalized_text value:
+  #   The absolute date depends on the wall-clock "now" at eval time (live run).
+  #   TaskSuccess asserts active_lang=es + detected_country=MX + needs_review=false.
+  #   Manual or post-processing verification: final_normalized_text MUST contain
+  #   an absolute date expression (e.g. a date in YYYY-MM-DD format or locale
+  #   equivalent) confirming "mañana" was resolved. See design.md §6 and task.py
+  #   criterion-006 comment for the rationale.
+  #   For fully deterministic CI: inject a fixed "now" via settings/env override
+  #   before running this case (see task.py run_turn docstring).
+  #
+  # REAL ipapi.co call for IP 189.210.1.1 (Telmex/America Movil, Mexico → MX).
+  # Also covers: req-005 (final_normalized_text with locale applied), req-014
+  # (final_normalized_text consistent with active_lang=es).
+  # ---------------------------------------------------------------------------
+  - name: orchestrator-and-fusion-006
+    inputs:
+      message: "¿El seminario de estoicismo es mañana a qué hora?"
+      ip: "189.210.1.1"
+    expected_output:
+      active_lang: es
+      detected_country: MX
+      needs_review: false
+    metadata:
+      suite: fusion
+      lang: es
+      must_trip: []
+      requirement: orchestrator-and-fusion-006
+      geo_note: >-
+        REAL ipapi.co call. 189.210.1.1 is a stable Telmex/America Movil (Mexico)
+        IP; ipapi.co maps it to country=MX, timezone=America/Mexico_City. REST
+        Countries enriches to locale es-MX. reconcile() detects es locale matches
+        active_lang=es → high confidence → needs_review=false.
+      relative_date_note: >-
+        The word "mañana" is a relative temporal expression. final_normalized_text
+        MUST contain an absolute date (day/month/year or ISO 8601 format) resolved
+        to the America/Mexico_City timezone. This cannot be asserted as an exact
+        expected_output value because "now" is live at eval time. Post-run
+        inspection: grep final_normalized_text for a date pattern (e.g. \d{4}-\d{2}-\d{2}
+        or an equivalent locale-formatted date). For deterministic CI, set an env
+        override for "now" before calling run_turn (see task.py criterion-006 comment).
+
+  # ---------------------------------------------------------------------------
+  # orchestrator-and-fusion-011
+  # Requirement: IF the resolved geo locale diverges from the session's active_lang
+  # THEN THE SYSTEM SHALL lower confidence_score AND set needs_review=true.
+  #
+  # Scenario: Brazilian IP (200.147.1.1) + English message.
+  # ipapi.co returns country=BR; REST Countries enriches to locale pt-BR.
+  # active_lang is detected as "en" (from the EN message).
+  # reconcile(): locale language "pt" ≠ active_lang "en" → divergence branch →
+  # confidence_score *= 0.6, needs_review=true.
+  # Expected: detected_country=BR, active_lang=en, needs_review=true.
+  #
+  # Cache note (req-017): if orchestrator-and-fusion-002 ran first in the same
+  # process, the per-IP LRU cache returns the cached GeoContext for 200.147.1.1
+  # without a second ipapi.co call. This also validates caching behavior.
+  #
+  # REAL ipapi.co call (or cache hit) for IP 200.147.1.1.
+  # Also covers: req-008 (deterministic reconciliation divergence branch),
+  # req-009 (confidence damping), req-017 (per-IP cache reuse).
+  # ---------------------------------------------------------------------------
+  - name: orchestrator-and-fusion-011
+    inputs:
+      message: "What philosophy courses are available this semester?"
+      ip: "200.147.1.1"
+    expected_output:
+      detected_country: BR
+      active_lang: en
+      needs_review: true
+    metadata:
+      suite: fusion
+      lang: en
+      must_trip: []
+      requirement: orchestrator-and-fusion-011
+      geo_note: >-
+        REAL ipapi.co call (or LRU cache hit if orchestrator-and-fusion-002 ran
+        first). 200.147.1.1 → BR, locale pt-BR. EN message → active_lang=en.
+        reconcile() detects locale-language pt ≠ active_lang en → divergence →
+        confidence_score *= 0.6, needs_review=true. Validates req-011 divergence
+        branch and req-017 per-IP cache behavior.
