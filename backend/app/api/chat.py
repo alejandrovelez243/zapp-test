@@ -42,12 +42,13 @@ import logfire
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage, UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import degraded_turn, get_orchestrator
-from app.agents.session import SessionRepository
-from app.config import get_settings
+from app.agents.session import ConversationSession, SessionRepository
+from app.config import Settings, get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
@@ -55,7 +56,9 @@ from app.eval.runtime import evaluate_conversation, is_goodbye
 from app.fusion.geo import GeoContext, GeoFusionService
 from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
+from app.lang.detector import DetectionResult
 from app.lang.pipeline import LanguagePipeline
+from app.lang.state import ActiveLangDecision
 from app.observability import get_posthog
 
 log = logging.getLogger(__name__)
@@ -86,6 +89,228 @@ class ChatRequest(BaseModel):
     message: str
 
 
+# ---------------------------------------------------------------------------
+# Module-level helpers — each handles one seam of the per-turn pipeline.
+# ---------------------------------------------------------------------------
+
+
+def _detect_language(message: str, pipeline: LanguagePipeline) -> DetectionResult:
+    """Run deterministic language detection inside a named Logfire span.
+
+    req: multilingual-002
+    """
+    with logfire.span("language.detect"):
+        return pipeline.detect(message)
+
+
+async def _persist_language_state(
+    repo: SessionRepository,
+    session: ConversationSession,
+    db: AsyncSession,
+    decision: ActiveLangDecision,
+    settings: Settings,
+) -> None:
+    """Write active_lang + pending-switch counters back to the session row (no commit).
+
+    Shared by the block path, the degrade path, and the happy path so the logic
+    lives in exactly one place.
+
+    req: multilingual-004, multilingual-007, multilingual-008, multilingual-009
+    """
+    await repo.update_language_state(
+        session,
+        active_lang=decision.active_lang,
+        last_supported_lang=(
+            decision.active_lang
+            if decision.active_lang in settings.supported
+            else session.last_supported_lang
+        ),
+        pending_switch_lang=decision.pending_switch_lang,
+        pending_switch_count=decision.pending_switch_count,
+    )
+
+
+def _emit_telemetry(
+    session_id: str,
+    turn: TurnOutput,
+    gr_in_triggered: list[str],
+    gr_out_triggered: list[str],
+) -> None:
+    """Emit a metadata-only ``turn_completed`` PostHog event.
+
+    Never includes student message content — PostHog does not scrub PII.
+    Guardrail NAMES (not content) are included for product-analytics visibility.
+
+    req: multilingual-001, multilingual-005 (Task 10); guardrails-013
+    """
+    ph = get_posthog()
+    if ph is not None:
+        ph.capture(
+            distinct_id=session_id,
+            event="turn_completed",
+            properties={
+                "active_lang": turn.active_lang,
+                "detected_lang": turn.detected_lang,
+                "lang_confidence": turn.lang_confidence,
+                "needs_review": turn.needs_review,
+                "guardrail_input": gr_in_triggered,
+                "guardrail_output": gr_out_triggered,
+            },
+        )
+
+
+async def _blocked_turn(
+    *,
+    gr_in: GuardrailResult,
+    decision: ActiveLangDecision,
+    det: DetectionResult,
+    session_id: str,
+    repo: SessionRepository,
+    session: ConversationSession,
+    db: AsyncSession,
+    settings: Settings,
+) -> TurnOutput:
+    """Short-circuit path: persist session state and return a safe refusal without calling the LLM.
+
+    The orchestrator is never reached, so this path works with no gateway key.
+
+    req: guardrails-003, guardrails-004, guardrails-005, guardrails-012, guardrails-013
+    """
+    await _persist_language_state(repo, session, db, decision, settings)
+    await db.commit()
+
+    # Primary category drives the refusal wording; fail-safe to "prompt_injection".
+    primary: str = gr_in.triggered[0] if gr_in.triggered else "prompt_injection"
+    blocked = TurnOutput(
+        reply=safe_refusal(decision.active_lang, primary),
+        detected_lang=det.lang or decision.active_lang,
+        active_lang=decision.active_lang,
+        lang_confidence=0.0,
+        final_normalized_text="",
+        detected_country=None,
+        confidence_score=0.0,
+        needs_review=True,
+        guardrails=GuardrailReport(input=gr_in.triggered),
+    )
+    _emit_telemetry(session_id, blocked, gr_in.triggered, [])
+    return blocked
+
+
+def _build_agent_deps(
+    db: AsyncSession,
+    http: httpx.AsyncClient,
+    session_id: str,
+    request_ip: str,
+    decision: ActiveLangDecision,
+    det: DetectionResult,
+    geo: GeoContext,
+) -> AgentDeps:
+    """Construct the per-request AgentDeps from resolved signals.
+
+    req: orchestrator-and-fusion-002, multilingual-005, multilingual-012
+    """
+    return AgentDeps(
+        session=db,
+        http=http,
+        session_id=session_id,
+        request_ip=request_ip,
+        active_lang=decision.active_lang,
+        detection=det,
+        lang_decision=decision,
+        geo=geo,
+    )
+
+
+async def _run_orchestrator_turn(
+    *,
+    db: AsyncSession,
+    repo: SessionRepository,
+    session: ConversationSession,
+    decision: ActiveLangDecision,
+    det: DetectionResult,
+    session_id: str,
+    request_ip: str,
+    message: str,
+    history: list[ModelMessage] | None,
+    settings: Settings,
+) -> TurnOutput:
+    """Geo-resolve → build deps → run orchestrator; degrade on model errors.
+
+    req: multilingual-001, multilingual-004, guardrails-006,
+         orchestrator-and-fusion-002, orchestrator-and-fusion-013
+    """
+    usage = RunUsage()
+    geo: GeoContext = GeoContext()
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
+            geo = await GeoFusionService(http, settings).resolve(request_ip)
+            deps = _build_agent_deps(db, http, session_id, request_ip, decision, det, geo)
+            result = await get_orchestrator().run(
+                message,
+                deps=deps,
+                message_history=history,
+                usage=usage,
+                usage_limits=UsageLimits(
+                    request_limit=6,
+                    tool_calls_limit=8,
+                    total_tokens_limit=20_000,
+                ),
+            )
+    except (ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded) as exc:
+        log.warning(
+            "Orchestrator error — degrading turn (session=%r): %s: %s",
+            session_id,
+            type(exc).__name__,
+            exc,
+        )
+        await _persist_language_state(repo, session, db, decision, settings)
+        await db.commit()
+        turn = degraded_turn(decision.active_lang)
+        turn.detected_country = geo.country  # req: orchestrator-and-fusion-013
+        return turn
+
+    await _persist_language_state(repo, session, db, decision, settings)
+    await repo.save_messages(session_id, result.all_messages())
+    await db.commit()
+    return result.output
+
+
+def _apply_output_guardrails(
+    turn: TurnOutput,
+    engine: GuardrailEngine,
+    gr_in: GuardrailResult,
+) -> tuple[TurnOutput, GuardrailResult]:
+    """Run output guardrails, apply block/redact, and merge names into the contract.
+
+    Modifies *turn* in place (reply replacement / needs_review update) and returns
+    the updated turn together with the output GuardrailResult for telemetry.
+
+    req: guardrails-001, guardrails-002, guardrails-008, guardrails-009,
+         guardrails-010, guardrails-013
+    """
+    with logfire.span("guardrails.output"):
+        gr_out: GuardrailResult = engine.run_output(turn.reply)
+
+    if gr_out.blocked:
+        # Block wins over redact — replace with safe refusal.
+        # req: guardrails-009, guardrails-010
+        primary_out: str = gr_out.triggered[0] if gr_out.triggered else "secret_leak"
+        turn.reply = safe_refusal(turn.active_lang, primary_out)
+    elif gr_out.action == "redact":
+        # Scrub PII from reply text.  req: guardrails-008
+        turn.reply = gr_out.text
+
+    # Merge guardrail names and OR needs_review.  req: guardrails-002
+    turn.guardrails = GuardrailReport(input=gr_in.triggered, output=gr_out.triggered)
+    turn.needs_review = turn.needs_review or bool(gr_in.triggered or gr_out.triggered)
+    return turn, gr_out
+
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
+
+
 @router.post("/chat", response_model=TurnOutput)
 async def chat(
     req: ChatRequest,
@@ -93,239 +318,56 @@ async def chat(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> TurnOutput:
-    """Full chat turn: detect → resolve → guardrails → agent → guardrails → persist → TurnOutput.
+    """Full per-turn pipeline: detect → resolve → guardrails → agent → guardrails → persist.
 
-    Never returns a 500: ``ModelHTTPError``, ``UnexpectedModelBehavior``, and
-    ``UsageLimitExceeded`` are caught and degrade to a safe ``TurnOutput`` with
-    ``needs_review=True``.  Session language state is always persisted even on
-    the degrade path and the block path so subsequent turns remain coherent.
-
-    The block path (input guardrail fires) short-circuits before any model call so it
-    works without a gateway key — the LLM is never reached.
-
+    Never returns a 500 — model errors degrade to a safe TurnOutput with needs_review=True.
     req: multilingual-001, multilingual-004, multilingual-008, multilingual-009
     req: guardrails-001..010, guardrails-012, guardrails-013
     """
     settings = get_settings()
-
-    # One Logfire span per conversation turn — the trace root so a grader can open a
-    # single trace and see detect → resolve → guardrails → agent run end-to-end.
-    # req: multilingual-001, multilingual-005 (Task 10)
     with logfire.span("chat_turn", session_id=req.session_id):
-        # 1. Deterministic language detection (pre-agent, no LLM round-trip).
-        #    The inner span makes the detector call individually latency-attributable.
-        #    req: multilingual-002
         pipeline = LanguagePipeline(settings)
-        with logfire.span("language.detect"):
-            det = pipeline.detect(req.message)
+        det = _detect_language(req.message, pipeline)
 
-        # 2. Load or create the ConversationSession row.
-        #    req: multilingual-007
         repo = SessionRepository(db)
         session = await repo.get_or_create(req.session_id)
-
-        # 3. Decide active_lang via the state machine (pure, no I/O).
-        #    req: multilingual-003, multilingual-004, multilingual-008, multilingual-009
         decision = pipeline.resolve(session, det)
 
-        # 4. Request IP — safe fallback for reverse proxies or test clients without a
-        #    real remote address.
         request_ip: str = request.client.host if request.client else "unknown"
 
-        # 5. Run input guardrails BEFORE the agent.
-        #    Construct the engine once per turn (cheap); wrapped in its own Logfire span.
-        #    req: guardrails-001, guardrails-003..007, guardrails-013
         engine = GuardrailEngine(settings)
         with logfire.span("guardrails.input"):
             gr_in: GuardrailResult = await engine.run_input(req.message, decision.active_lang)
 
         if gr_in.blocked:
-            # Block path: persist session language state so subsequent turns are
-            # coherent, then return a safe TurnOutput WITHOUT calling the orchestrator.
-            # The LLM is never reached — this path works with no gateway key.
-            # req: guardrails-003, guardrails-004, guardrails-005, guardrails-012
-            await repo.update_language_state(
-                session,
-                active_lang=decision.active_lang,
-                last_supported_lang=(
-                    decision.active_lang
-                    if decision.active_lang in settings.supported
-                    else session.last_supported_lang
-                ),
-                pending_switch_lang=decision.pending_switch_lang,
-                pending_switch_count=decision.pending_switch_count,
-            )
-            await db.commit()
-
-            # Primary category for the refusal message: first triggered name, falling
-            # back to "prompt_injection" when the list is unexpectedly empty (fail-safe).
-            primary_in_category: str = gr_in.triggered[0] if gr_in.triggered else "prompt_injection"
-            blocked_turn = TurnOutput(
-                reply=safe_refusal(decision.active_lang, primary_in_category),
-                detected_lang=det.lang or decision.active_lang,
-                active_lang=decision.active_lang,
-                lang_confidence=0.0,
-                final_normalized_text="",
-                detected_country=None,
-                confidence_score=0.0,
-                needs_review=True,
-                guardrails=GuardrailReport(input=gr_in.triggered),
+            return await _blocked_turn(
+                gr_in=gr_in,
+                decision=decision,
+                det=det,
+                session_id=req.session_id,
+                repo=repo,
+                session=session,
+                db=db,
+                settings=settings,
             )
 
-            # Metadata-only PostHog event — NAMES ONLY, never req.message or reply.
-            # req: guardrails-013
-            ph = get_posthog()
-            if ph is not None:
-                ph.capture(
-                    distinct_id=req.session_id,
-                    event="turn_completed",
-                    properties={
-                        "active_lang": blocked_turn.active_lang,
-                        "detected_lang": blocked_turn.detected_lang,
-                        "lang_confidence": blocked_turn.lang_confidence,
-                        "needs_review": blocked_turn.needs_review,
-                        "guardrail_input": gr_in.triggered,
-                        "guardrail_output": [],
-                    },
-                )
-
-            return blocked_turn
-
-        # 6. Load message history for session coherence.
-        #    Only reached when input guardrails did NOT block.
-        #    req: multilingual-007
         history = await repo.load_messages(req.session_id)
+        turn = await _run_orchestrator_turn(
+            db=db,
+            repo=repo,
+            session=session,
+            decision=decision,
+            det=det,
+            session_id=req.session_id,
+            request_ip=request_ip,
+            message=gr_in.text,
+            history=history,
+            settings=settings,
+        )
 
-        # 7. Run the orchestrator inside a per-request httpx client so every outbound
-        #    geo/locale call in the agent run is captured in one Logfire span via
-        #    logfire.instrument_httpx(capture_all=True).
-        #    Pass gr_in.text (possibly PII-redacted) instead of req.message.
-        #    req: multilingual-001, guardrails-006
-        usage = RunUsage()
-        turn: TurnOutput
-        # req: orchestrator-and-fusion-013 — geo is resolved before the orchestrator run so the
-        # degrade path can still report detected_country even when the model call fails.
-        # Initialised to the empty default; reassigned inside the async-with block (always, since
-        # GeoFusionService.resolve never raises).
-        geo: GeoContext = GeoContext()
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
-                # req: orchestrator-and-fusion-002, -013 — resolve geo BEFORE building AgentDeps
-                # and BEFORE the orchestrator run, reusing the SAME instrumented httpx client.
-                # GeoFusionService.resolve never raises; errors surface as source="error", ok=False.
-                geo = await GeoFusionService(http, settings).resolve(request_ip)
-                deps = AgentDeps(
-                    session=db,
-                    http=http,
-                    session_id=req.session_id,
-                    request_ip=request_ip,
-                    active_lang=decision.active_lang,
-                    detection=det,
-                    lang_decision=decision,
-                    geo=geo,
-                )
-                result = await get_orchestrator().run(
-                    gr_in.text,
-                    deps=deps,
-                    message_history=history,
-                    usage=usage,
-                    usage_limits=UsageLimits(
-                        request_limit=6,
-                        tool_calls_limit=8,
-                        total_tokens_limit=20_000,
-                    ),
-                )
-        except (ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded) as exc:
-            # Degrade gracefully — persist the session lang state so future turns
-            # remain coherent, but do NOT save messages (the run didn't complete).
-            # req: multilingual-001, multilingual-004, multilingual-008, multilingual-009
-            log.warning(
-                "Orchestrator error — degrading turn (session=%r): %s: %s",
-                req.session_id,
-                type(exc).__name__,
-                exc,
-            )
-            await repo.update_language_state(
-                session,
-                active_lang=decision.active_lang,
-                last_supported_lang=(
-                    decision.active_lang
-                    if decision.active_lang in settings.supported
-                    else session.last_supported_lang
-                ),
-                pending_switch_lang=decision.pending_switch_lang,
-                pending_switch_count=decision.pending_switch_count,
-            )
-            await db.commit()
-            turn = degraded_turn(decision.active_lang)
-            # req: orchestrator-and-fusion-013 — the degrade path still reports detected_country
-            # from the geo signal resolved above (geo.country is None on geo-error/private-ip,
-            # which is the correct safe value for the contract field).
-            turn.detected_country = geo.country
-        else:
-            # 8. Persist language state + full message history.
-            #    req: multilingual-007
-            await repo.update_language_state(
-                session,
-                active_lang=decision.active_lang,
-                last_supported_lang=(
-                    decision.active_lang
-                    if decision.active_lang in settings.supported
-                    else session.last_supported_lang
-                ),
-                pending_switch_lang=decision.pending_switch_lang,
-                pending_switch_count=decision.pending_switch_count,
-            )
-            await repo.save_messages(req.session_id, result.all_messages())
-            await db.commit()
+        turn, gr_out = _apply_output_guardrails(turn, engine, gr_in)
+        _emit_telemetry(req.session_id, turn, gr_in.triggered, gr_out.triggered)
 
-            # 9. Capture the structured output emitted by the output_validator.
-            #    req: multilingual-001
-            turn = result.output
-
-        # 10. Run output guardrails AFTER the agent (happy path or degrade path).
-        #     Wrapped in its own Logfire span; modify turn.reply in-place.
-        #     req: guardrails-001, guardrails-008, guardrails-009, guardrails-010, guardrails-013
-        with logfire.span("guardrails.output"):
-            gr_out: GuardrailResult = engine.run_output(turn.reply)
-
-        if gr_out.blocked:
-            # Replace the reply with a safe refusal (block wins over redact).
-            # req: guardrails-009, guardrails-010
-            primary_out_category: str = gr_out.triggered[0] if gr_out.triggered else "secret_leak"
-            turn.reply = safe_refusal(turn.active_lang, primary_out_category)
-        elif gr_out.action == "redact":
-            # Scrub PII from the reply text.  req: guardrails-008
-            turn.reply = gr_out.text
-
-        # 11. Merge guardrail names into the contract and OR needs_review.
-        #     req: guardrails-002
-        turn.guardrails = GuardrailReport(input=gr_in.triggered, output=gr_out.triggered)
-        turn.needs_review = turn.needs_review or bool(gr_in.triggered or gr_out.triggered)
-
-        # 12. Metadata-only PostHog event — NEVER include req.message or turn.reply.
-        #     Guardrail NAMES (not content) are included for product-analytics visibility.
-        #     PostHog does not scrub PII; student message content stays in Logfire only.
-        #     req: multilingual-001, multilingual-005 (Task 10); guardrails-013
-        ph = get_posthog()
-        if ph is not None:
-            ph.capture(
-                distinct_id=req.session_id,
-                event="turn_completed",
-                properties={
-                    "active_lang": turn.active_lang,
-                    "detected_lang": turn.detected_lang,
-                    "lang_confidence": turn.lang_confidence,
-                    "needs_review": turn.needs_review,
-                    "guardrail_input": gr_in.triggered,
-                    "guardrail_output": gr_out.triggered,
-                },
-            )
-
-        # 13. Schedule end-of-conversation evaluation if goodbye intent detected.
-        #     A fresh AsyncSession is opened inside ``_background_eval`` so it is
-        #     decoupled from the now-committed request-scoped ``db`` session.
-        #     req: evaluation-015, evaluation-018
         if settings.runtime_eval_enabled and is_goodbye(req.message, decision.active_lang):
             background_tasks.add_task(_background_eval, req.session_id)
 
