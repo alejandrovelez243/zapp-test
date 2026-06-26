@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.fusion.geo import GeoContext
 from app.lang.detector import DetectionResult
 from app.lang.state import ActiveLangDecision
 
@@ -56,3 +57,7 @@ class AgentDeps:
     # sets the real values from the detector + state machine.
     detection: DetectionResult = field(default_factory=_default_detection)
     lang_decision: ActiveLangDecision = field(default_factory=_default_lang_decision)
+    # req: orchestrator-and-fusion-001 — carry resolved geo into every agent run.
+    # Defaulted so existing AgentDeps() construction sites keep working without
+    # passing geo; the /chat boundary (Task 6) sets the real GeoContext.
+    geo: GeoContext = field(default_factory=GeoContext)
