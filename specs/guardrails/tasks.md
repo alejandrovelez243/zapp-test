@@ -11,7 +11,7 @@ wiring. Drive task-by-task via `/implement guardrails`.
 
 ## Tasks
 
-- [ ] 1. Add `guardrails_enabled: bool = True` and `guardrails_llm_enabled: bool = False` to `app/config.py` `Settings`. — _req: guardrails-015, guardrails-016 — owner: backend-engineer_
+- [x] 1. Add `guardrails_enabled: bool = True` and `guardrails_llm_enabled: bool = False` to `app/config.py` `Settings`. — _req: guardrails-015, guardrails-016 — owner: backend-engineer_
 
 - [ ] 2. Implement `app/guardrails/detectors.py` — deterministic, multilingual (ES/EN/PT) detectors: `detect_pii` (email/phone/national-id/card regex) + `redact_pii`; `detect_prompt_injection`; `detect_jailbreak`; `detect_toxicity(text, lang)`; `detect_off_topic` (soft heuristic); `detect_secret_leak` (ADMIN_TOKEN value, `sk-`/`pylf_` key shapes, system-prompt fragments). Pure functions, never raise (engine handles fail-safe). — _req: guardrails-003, guardrails-004, guardrails-005, guardrails-006, guardrails-007, guardrails-008, guardrails-009, guardrails-010, guardrails-011, guardrails-014 — owner: backend-engineer_
 

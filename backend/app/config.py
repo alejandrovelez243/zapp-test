@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # for the idle-sweep grader.
     conversation_idle_timeout: int = 900
 
+    # --- Guardrails (req: guardrails-015, guardrails-016) ---
+    # Master kill-switch: when False, all guardrail checks are skipped and
+    # guardrails.{input,output} are left empty (for debugging only).
+    guardrails_enabled: bool = True
+    # Tier-3 flag: when True, augments the deterministic core with an optional LLM
+    # guardrail layer. Default off — the deterministic core is sufficient for production.
+    guardrails_llm_enabled: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:
