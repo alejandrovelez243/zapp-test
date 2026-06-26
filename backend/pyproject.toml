@@ -8,6 +8,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi>=0.138.1",
     "httpx>=0.28.1",
+    "lingua-language-detector>=2.2.0",
     "logfire>=4.37.0",
     "pgvector>=0.4.2",
     "posthog>=7.20.5",

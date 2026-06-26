@@ -7,7 +7,7 @@ via `/implement multilingual`.
 
 ## Tasks
 
-- [ ] 1. Add the deterministic language-detector dependency via `uv add lingua-language-detector` (never hand-edit `pyproject.toml`); refresh `uv.lock`. — _req: multilingual-002 — owner: devops-engineer_
+- [x] 1. Add the deterministic language-detector dependency via `uv add lingua-language-detector` (never hand-edit `pyproject.toml`); refresh `uv.lock`. — _req: multilingual-002 — owner: devops-engineer_
 
 - [ ] 2. Add `LanguageConfig` to the single config module: `supported=("es","en","pt")`, `fallback_lang="en"`, `lang_confidence_min=0.55`, `min_input_chars=12`, `autoswitch_min_turns=2`, and the `lang_autoswitch` flag (default `False`). — _req: multilingual-003, multilingual-009, multilingual-011 — owner: backend-engineer_
 
