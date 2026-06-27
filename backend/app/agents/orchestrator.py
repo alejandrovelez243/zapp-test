@@ -75,12 +75,13 @@ falls outside the school's domain (general trivia, other schools, unrelated subj
 ## Domain Context
 The school is Zapp Global Philosophy School — one institution with a fixed course
 catalog. Supported session languages are Spanish (es), English (en), and Portuguese
-(pt). The session language is set on the first supported turn and is stable by default;
-it may be offered or switched when the user consistently writes in a different supported
-language (the system handles switching automatically — see dynamic instructions below).
-Do not mix languages within a single reply. Unsupported languages degrade gracefully to
-the configured fallback (English). Use the ``ask_faq`` tool for specific questions about
-course content, faculty, pricing, events, or anything covered in the school's documents.
+(pt). The session language is set on the first supported turn and is stable by default.
+Call ``switch_language`` when the user explicitly asks to converse in a different
+supported language — do NOT claim you cannot switch. Unsupported languages degrade
+gracefully to the configured fallback (English). Use the ``ask_faq`` tool for specific
+questions about course content, faculty, pricing, events, or anything covered in the
+school's documents. Call ``end_session`` when the user clearly says goodbye or that
+they are done.
 
 ## Capabilities & Tool Guidance
 Use the ``ask_faq`` tool to answer questions about the school's courses, documents, and
@@ -89,6 +90,15 @@ faculty, prices, or any topic the school's documents may cover. NEVER invent fac
 ``ask_faq`` returns no information, say you do not have that information in the session
 language. For clearly off-topic questions (greetings, general conversation), you may
 reply without calling the tool.
+
+Call ``switch_language`` when the user EXPLICITLY requests to continue the conversation
+in a different supported language (es, en, or pt). After calling ``switch_language``,
+write `reply` in the NEW language you just switched to. NEVER tell the user that
+switching is not possible — you have this tool.
+
+Call ``end_session`` when the user clearly signals the end of the conversation (e.g.
+goodbye, thanks that's all, no more questions, I'm done). Give a warm, brief closing
+reply in the session language (or the new language if you just switched).
 
 ## Operating Instructions
 1. Determine the user's intent from their message in the context of the conversation.
@@ -106,6 +116,11 @@ reply without calling the tool.
    lower when the question is outside your knowledge or the user's intent is unclear.
 7. If the user's intent is ambiguous, ask exactly one focused clarifying question in
    the session language rather than guessing.
+8. If the user explicitly asks to switch to a different supported language (es/en/pt),
+   call ``switch_language`` with that language code and write `reply` in the new
+   language (NOT the old session language).
+9. If the user clearly signals the conversation is over, call ``end_session`` and give
+   a warm closing reply.
 
 ## Output Semantics
 - `reply` — the user-facing answer; must be written in the session language (`active_lang`).
@@ -252,6 +267,8 @@ def _with_active_language(ctx: RunContext[AgentDeps]) -> str:
         f"SESSION LANGUAGE: {lang_name} ({active_lang}). "
         f"You MUST write `reply` ONLY in {lang_name} — every word of the reply must be in "
         f"{lang_name} regardless of the language the user wrote in. "
+        "EXCEPTION: if you call ``switch_language`` during this turn, write `reply` in the "
+        "NEW language you passed to ``switch_language`` (not the old session language). "
         "Set `detected_lang` to the ISO 639-1 code of the language the USER wrote in THIS "
         "turn (two lowercase letters; may differ from the session language if the user "
         "switched). "
@@ -393,6 +410,65 @@ async def _reconcile_fusion(ctx: RunContext[AgentDeps], output: TurnOutput) -> T
         output.final_normalized_text = output.reply
 
     return output
+
+
+# ---------------------------------------------------------------------------
+# switch_language — explicit session-language switch tool  (multilingual-015)
+# ---------------------------------------------------------------------------
+
+
+async def switch_language(ctx: RunContext[AgentDeps], target_lang: str) -> str:
+    """Switch the session language when the user explicitly requests it.
+
+    Validates that *target_lang* is a supported language code (es/en/pt).  On
+    success, updates ``ctx.deps.active_lang`` immediately (the output_validator
+    ``_reconcile_language`` reads ``deps.active_lang`` to set ``output.active_lang``)
+    and sets ``ctx.deps.lang_switch_requested`` so ``_run_orchestrator_turn`` (in
+    ``app/api/chat.py``) persists the new language to the ``ConversationSession`` row
+    after the run completes.
+
+    Returns a short confirmation string the model uses to acknowledge the switch.
+    On an unsupported target, returns an error string without modifying deps.
+
+    req: multilingual-015 — explicit switch via tool; system SHALL NOT claim it cannot
+    """
+    settings = get_settings()
+    if target_lang not in settings.supported:
+        supported_str = ", ".join(settings.supported)
+        return (
+            f"Language '{target_lang}' is not supported. "
+            f"Supported languages: {supported_str}. No switch performed."
+        )
+    if target_lang == ctx.deps.active_lang:
+        lang_name = LANG_DISPLAY_NAMES.get(target_lang, target_lang)
+        return f"Session is already in {lang_name} ({target_lang}). No switch needed."
+    # Update deps in-place — _reconcile_language validator reads deps.active_lang.
+    ctx.deps.active_lang = target_lang
+    # Signal _run_orchestrator_turn to persist the new language after the run.
+    ctx.deps.lang_switch_requested = target_lang
+    lang_name = LANG_DISPLAY_NAMES.get(target_lang, target_lang)
+    return f"Session language switched to {lang_name} ({target_lang})."
+
+
+# ---------------------------------------------------------------------------
+# end_session — explicit end-of-conversation signal tool  (evaluation-015)
+# ---------------------------------------------------------------------------
+
+
+async def end_session(ctx: RunContext[AgentDeps], reason: str = "user_goodbye") -> str:
+    """Signal that the conversation is over (user said goodbye / no more questions).
+
+    Sets ``ctx.deps.session_ended = True`` so ``_run_orchestrator_turn`` (in
+    ``app/api/chat.py``) schedules ``evaluate_conversation`` as a background task
+    after the current turn completes.  Replaces the prior ``is_goodbye`` keyword-
+    heuristic trigger with a reliable agent-invoked signal.
+
+    The *reason* parameter is for logging / observability only.
+
+    req: evaluation-015 — goodbye trigger is now a tool, not a keyword matcher
+    """
+    ctx.deps.session_ended = True
+    return f"Session marked as ended (reason: {reason}). Please give a warm closing reply."
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +643,12 @@ def get_orchestrator() -> Agent[AgentDeps, TurnOutput]:
     #      req: faq-rag-011, faq-rag-015
     agent.instructions(_with_active_language)
     agent.instructions(_with_geo_context)
+    # Register tools: switch_language and end_session before ask_faq so they appear
+    # early in the function-tools list (models tend to attend to earlier entries).
+    # req: multilingual-015 — switch_language replaces the offer-only path for explicit requests
+    # req: evaluation-015 — end_session replaces the is_goodbye keyword heuristic
+    agent.tool(switch_language)
+    agent.tool(end_session)
     # Register the ask_faq tool so the model can delegate FAQ questions.
     # req: faq-rag-014 (deps+usage forwarded inside the function body)
     agent.tool(ask_faq)

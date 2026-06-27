@@ -1,10 +1,6 @@
 """Runtime end-of-conversation judge for the Zapp Global Philosophy School backend.
 
-Three public symbols consumed by the application layer:
-
-``is_goodbye``
-    Deterministic, LLM-free ES/EN/PT keyword/phrase matcher.  Zero API cost.
-    req: evaluation-015
+Two public symbols consumed by the application layer:
 
 ``evaluate_conversation``
     Asynchronous judge over the full conversation transcript.  Persists a
@@ -18,6 +14,11 @@ Three public symbols consumed by the application layer:
     with no ``graded_at`` timestamp.  Respects ``Settings.runtime_eval_enabled``.
     Returns the count of sessions graded in this sweep.
     req: evaluation-014
+
+NOTE: the ``is_goodbye`` keyword-heuristic function has been removed (evaluation-015).
+End-of-conversation intent is now detected by the orchestrator's ``end_session`` tool
+(``app/agents/orchestrator.py``), which sets ``AgentDeps.session_ended = True`` and
+signals ``app/api/chat.py`` to schedule ``evaluate_conversation`` as a background task.
 
 Judge model + thresholds are read exclusively from ``evals.config`` -- the single
 source of truth shared by the offline CI suite and this runtime judge, ensuring
@@ -65,72 +66,6 @@ from evals.config import JUDGE_MODEL, THRESHOLDS
 from evals.judge import judge_text
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Goodbye intent detection  (req: evaluation-015)
-# ---------------------------------------------------------------------------
-
-# Per-language lists of lowercase substrings/phrases.  A single match
-# short-circuits.  Both accented and ASCII variants are included so users who
-# omit diacritics are correctly detected (e.g. "adios" as well as "adios").
-_GOODBYE_KEYWORDS: dict[str, list[str]] = {
-    "es": [
-        "chao",
-        "adiós",
-        "adios",
-        "gracias",
-        "eso es todo",
-        "no necesito más",
-        "no necesito mas",
-        "listo",
-    ],
-    "en": [
-        "bye",
-        "goodbye",
-        "that's all",
-        "no thanks",
-        "that's it",
-    ],
-    "pt": [
-        "tchau",
-        "obrigado",
-        "obrigada",
-        "é só isso",
-        "e só isso",
-        "era só isso",
-        "era so isso",
-    ],
-}
-
-
-def is_goodbye(message: str, lang: str | None = None) -> bool:
-    """Return ``True`` when *message* expresses end-of-conversation intent.
-
-    Performs a deterministic, LLM-free case-insensitive substring search.  No
-    API call is made; the cost is negligible.
-
-    Args:
-        message: Raw user message to test.
-        lang: ISO 639-1 code of the active session language (``"es"``, ``"en"``,
-            or ``"pt"``).  When ``None`` or an unsupported code, all three
-            language keyword lists are searched.
-
-    Returns:
-        ``True`` if any goodbye keyword or phrase is found in the normalised
-        (lowercased) message; ``False`` otherwise.
-
-    req: evaluation-015
-    """
-    normalized = message.lower()
-    langs_to_check: list[str] = (
-        [lang] if lang in _GOODBYE_KEYWORDS else list(_GOODBYE_KEYWORDS.keys())
-    )
-    for lang_code in langs_to_check:
-        for kw in _GOODBYE_KEYWORDS.get(lang_code, []):
-            if kw in normalized:
-                return True
-    return False
-
 
 # ---------------------------------------------------------------------------
 # Transcript rendering  (private helper)

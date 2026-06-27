@@ -55,7 +55,7 @@ Out of scope: geo-IP / `detected_country` / REST Countries locale variants (pt-B
 12. IF language detection fails THEN THE SYSTEM SHALL fall back to the LLM `detected_lang`, set `lang_confidence` to a low value, AND set `needs_review=true`.   <!-- eval: multilingual-012 -->
 13. WHERE language auto-switch is enabled THE SYSTEM SHALL switch `active_lang` to a new supported language only after the user writes in that language for at least two consecutive turns.   <!-- eval: multilingual-013 -->
 14. WHERE language auto-switch is disabled THE SYSTEM SHALL keep the first-turn `active_lang` for the entire session regardless of later turns' `detected_lang`.   <!-- eval: multilingual-014 -->
-15. WHEN a user writes a reliably-detected supported language different from the locked `active_lang` (and a switch is pending, not yet fired) THE SYSTEM SHALL offer in the `reply` to continue in that language AND SHALL NOT claim it cannot change language.   <!-- eval: multilingual-015 -->
+15. WHEN a user explicitly requests to continue in a different supported language THE SYSTEM SHALL invoke the `switch_language` tool to update the session `active_lang` and reply in the new language; WHEN a switch is pending (auto-switch counter not yet fired) THE SYSTEM SHALL offer in the `reply` to continue in that language; in both cases THE SYSTEM SHALL NOT claim it cannot change language.   <!-- eval: multilingual-015 -->
 
 ## Case-id map
 

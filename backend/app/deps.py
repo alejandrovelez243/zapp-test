@@ -98,3 +98,13 @@ class AgentDeps:
     # needs_review.  Defaulted so existing AgentDeps() construction sites keep working
     # without passing rag; the faq agent's retrieve_chunks tool populates it at runtime.
     rag: RagSignal = field(default_factory=RagSignal)
+
+    # req: multilingual-015 — non-None when the switch_language tool fired this turn;
+    # holds the new language code.  Read by _run_orchestrator_turn (chat.py) after the
+    # orchestrator run to persist the switched active_lang to the session row.
+    lang_switch_requested: str | None = None
+
+    # req: evaluation-015 — set to True when the end_session tool fires this turn.
+    # Read by _run_orchestrator_turn (chat.py) to schedule evaluate_conversation as a
+    # background task.  Replaces the is_goodbye keyword-heuristic trigger.
+    session_ended: bool = False

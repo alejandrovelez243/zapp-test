@@ -52,7 +52,7 @@ from app.config import Settings, get_settings
 from app.contract import GuardrailReport, TurnOutput
 from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
-from app.eval.runtime import evaluate_conversation, is_goodbye
+from app.eval.runtime import evaluate_conversation
 from app.fusion.geo import GeoContext, GeoFusionService
 from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
@@ -233,14 +233,23 @@ async def _run_orchestrator_turn(
     message: str,
     history: list[ModelMessage] | None,
     settings: Settings,
-) -> TurnOutput:
+) -> tuple[TurnOutput, bool]:
     """Geo-resolve → build deps → run orchestrator; degrade on model errors.
 
-    req: multilingual-001, multilingual-004, guardrails-006,
-         orchestrator-and-fusion-002, orchestrator-and-fusion-013
+    Returns ``(turn, session_ended)`` where *session_ended* is ``True`` when the
+    ``end_session`` tool fired this turn (the caller schedules ``evaluate_conversation``
+    as a background task).  On the degrade path, returns ``(degraded_turn, False)``.
+
+    Also handles the ``switch_language`` signal: if the tool updated
+    ``deps.lang_switch_requested`` during the run, an effective decision with the
+    new language code is used for session persistence instead of the pre-run decision.
+
+    req: multilingual-001, multilingual-004, multilingual-015, guardrails-006,
+         orchestrator-and-fusion-002, orchestrator-and-fusion-013, evaluation-015
     """
     usage = RunUsage()
     geo: GeoContext = GeoContext()
+    deps: AgentDeps | None = None
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
             geo = await GeoFusionService(http, settings).resolve(request_ip)
@@ -267,12 +276,31 @@ async def _run_orchestrator_turn(
         await db.commit()
         turn = degraded_turn(decision.active_lang)
         turn.detected_country = geo.country  # req: orchestrator-and-fusion-013
-        return turn
+        return turn, False
 
-    await _persist_language_state(repo, session, db, decision, settings)
+    # -- switch_language signal: if the tool switched the language, persist the new
+    #    active_lang instead of the pre-run state-machine decision.
+    #    req: multilingual-015
+    assert deps is not None  # always set on the happy path (except returned above)
+    if deps.lang_switch_requested is not None:
+        effective_decision = ActiveLangDecision(
+            active_lang=deps.lang_switch_requested,
+            first_turn=decision.first_turn,
+            locked=True,
+            switched=True,
+            pending_switch_lang=None,
+            pending_switch_count=0,
+        )
+    else:
+        effective_decision = decision
+
+    await _persist_language_state(repo, session, db, effective_decision, settings)
     await repo.save_messages(session_id, result.all_messages())
     await db.commit()
-    return result.output
+
+    # -- end_session signal: return flag so the caller schedules evaluate_conversation.
+    #    req: evaluation-015
+    return result.output, deps.session_ended
 
 
 def _apply_output_guardrails(
@@ -352,7 +380,7 @@ async def chat(
             )
 
         history = await repo.load_messages(req.session_id)
-        turn = await _run_orchestrator_turn(
+        turn, session_ended = await _run_orchestrator_turn(
             db=db,
             repo=repo,
             session=session,
@@ -368,7 +396,8 @@ async def chat(
         turn, gr_out = _apply_output_guardrails(turn, engine, gr_in)
         _emit_telemetry(req.session_id, turn, gr_in.triggered, gr_out.triggered)
 
-        if settings.runtime_eval_enabled and is_goodbye(req.message, decision.active_lang):
+        # req: evaluation-015 — end_session tool replaces the is_goodbye keyword heuristic.
+        if settings.runtime_eval_enabled and session_ended:
             background_tasks.add_task(_background_eval, req.session_id)
 
         return turn

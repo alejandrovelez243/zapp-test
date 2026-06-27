@@ -1,9 +1,11 @@
-"""Tests for app/eval/runtime.py — is_goodbye, evaluate_conversation, idle_sweep_once.
+"""Tests for app/eval/runtime.py — evaluate_conversation, idle_sweep_once.
 
 Uses TestModel (no gateway calls) and in-memory aiosqlite (no Postgres).
 
-Covers: evaluation-014, evaluation-015, evaluation-016, evaluation-017,
-        evaluation-018, evaluation-019
+NOTE: is_goodbye has been removed (evaluation-015); its tests moved to test_switch_end_tools.py
+(the end_session tool replaces the keyword heuristic).
+
+Covers: evaluation-014, evaluation-016, evaluation-017, evaluation-018, evaluation-019
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from app.agents.session import (
     ConversationSession,
     SessionGrade,
 )
-from app.eval.runtime import evaluate_conversation, idle_sweep_once, is_goodbye
+from app.eval.runtime import evaluate_conversation, idle_sweep_once
 from evals.judge import get_judge
 
 _TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -73,33 +75,6 @@ async def db_session(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncSes
         yield session
 
     await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# is_goodbye (evaluation-015)
-# ---------------------------------------------------------------------------
-
-
-class TestIsGoodbye:
-    def test_is_goodbye_es_positive(self) -> None:
-        """Spanish goodbye phrase → True. (evaluation-015)"""
-        assert is_goodbye("no necesito más ayuda", "es") is True
-
-    def test_is_goodbye_en_positive(self) -> None:
-        """English goodbye keyword → True. (evaluation-015)"""
-        assert is_goodbye("goodbye, thanks!", "en") is True
-
-    def test_is_goodbye_pt_positive(self) -> None:
-        """Portuguese goodbye keyword → True. (evaluation-015)"""
-        assert is_goodbye("tchau, obrigado!", "pt") is True
-
-    def test_is_goodbye_negative(self) -> None:
-        """Non-goodbye message → False. (evaluation-015)"""
-        assert is_goodbye("What time is the stoicism seminar?", "en") is False
-
-    def test_is_goodbye_no_lang_searches_all(self) -> None:
-        """lang=None → all keyword lists searched; Spanish keyword detected. (evaluation-015)"""
-        assert is_goodbye("adiós y gracias", None) is True
 
 
 # ---------------------------------------------------------------------------

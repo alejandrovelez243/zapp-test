@@ -66,7 +66,7 @@ lands); the FAQ-RAG / events behaviors evaluated later as their specs land; the 
 12. WHEN CI runs on push or pull request THE SYSTEM SHALL execute the full eval suite (including the LLM judge, using the gateway key from secrets) and fail the pipeline on any threshold breach.   <!-- eval: evaluation-012 -->
 13. THE SYSTEM SHALL commit a pre-generated example report demonstrating the metrics.   <!-- eval: evaluation-013 -->
 14. WHILE a chat session has been inactive longer than `conversation_idle_timeout` THE SYSTEM SHALL treat the conversation as ended and trigger a runtime evaluation of that session.   <!-- eval: evaluation-014 -->
-15. WHEN a user expresses an end-of-conversation intent (e.g. goodbye / "no necesito más ayuda") THE SYSTEM SHALL treat the conversation as ended and trigger a runtime evaluation of that session.   <!-- eval: evaluation-015 -->
+15. WHEN a user expresses an end-of-conversation intent (e.g. goodbye / "no necesito más ayuda") THE SYSTEM SHALL call the `end_session` tool, which signals the boundary to trigger a runtime evaluation of that session; the prior keyword-heuristic trigger (`is_goodbye`) is replaced by this tool invocation.   <!-- eval: evaluation-015 -->
 16. WHEN a conversation ends THE SYSTEM SHALL grade the finished session with the LLM judge (1–5 rubric, temperature 0) and persist the grade.   <!-- eval: evaluation-016 -->
 17. WHEN a runtime evaluation completes THE SYSTEM SHALL emit the grade as metadata to observability (Logfire + PostHog) WITHOUT student message content.   <!-- eval: evaluation-017 -->
 18. WHERE runtime evaluation is enabled THE SYSTEM SHALL run the end-of-conversation judge; WHERE disabled THE SYSTEM SHALL skip it.   <!-- eval: evaluation-018 -->
