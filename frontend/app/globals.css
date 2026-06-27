@@ -4,7 +4,26 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Scaffold CSS variables — full classical palette and meander tokens are added in task 2. */
+/*
+ * ============================================================
+ * CLASSICAL DESIGN TOKENS — Philosophy School
+ *
+ * Palette (one accent):
+ *   paper/ivory  #F4EFE6  (background)
+ *   ink          #1A1714  (foreground; ~15:1 on paper — WCAG AAA)
+ *   aubergine    #6E2C50  (THE single accent — links/active/focus;
+ *                          ~8.7:1 on paper — WCAG AA)
+ *   Decorative hairlines use ink at low opacity, NOT the accent,
+ *   preserving the one-accent rule.
+ *
+ * Fonts (set on <html> by next/font in layout.tsx):
+ *   --font-serif  Newsreader  (display/headings)
+ *   --font-sans   Public Sans (UI/body)
+ *   --font-mono   JetBrains Mono (tokens/ids/code)
+ *
+ * req: frontend-shell-017, frontend-shell-018, frontend-shell-021
+ * ============================================================
+ */
 
 html {
   height: 100%;
@@ -36,39 +55,57 @@ a {
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  /* ── Font families ────────────────────────────────────────────
+     Variables are set at runtime by next/font on <html>.
+     @theme inline resolves them dynamically via var().            */
+
+  /* Newsreader (serif display) — headings and assistant voice */
+  --font-heading: var(--font-serif);
+  /* Public Sans (humanist sans) — UI labels, body, chrome */
   --font-sans: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
+  /* JetBrains Mono — token ids, metadata, code */
+  --font-mono: var(--font-mono);
+
+  /* ── Reading measure ──────────────────────────────────────── */
+  /* Narrow, readable column width for chat prose (~66 characters) */
+  --width-measure: 66ch;
+
+  /* ── shadcn/ui semantic color token mapping ───────────────── */
+  /* Maps Tailwind utility names (bg-background, text-primary …)  */
+  /* to the CSS custom properties defined in :root / .dark below. */
   --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── Border-radius scale ──────────────────────────────────── */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -78,83 +115,202 @@ a {
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ── Light theme: classical palette ────────────────────────────
+   Paper-and-ink base. Single accent = deep aubergine #6E2C50.
+   WCAG AA verified:
+     ink #1A1714 on paper #F4EFE6 → contrast ~15.4:1 (AAA)
+     aubergine #6E2C50 on paper #F4EFE6 → contrast ~8.7:1 (AA)
+   req: frontend-shell-021                                        */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Surface — warm off-white, ink-on-paper feel */
+  --background: #F4EFE6;
+  --foreground: #1A1714;
+
+  /* Cards and popovers share the paper ground */
+  --card: #F4EFE6;
+  --card-foreground: #1A1714;
+  --popover: #F4EFE6;
+  --popover-foreground: #1A1714;
+
+  /* Primary = the single aubergine accent (links, buttons, active) */
+  --primary: #6E2C50;
+  --primary-foreground: #F4EFE6;
+
+  /* Secondary — slightly warmer, muted grey for secondary surfaces */
+  --secondary: #E6E0D4;
+  --secondary-foreground: #1A1714;
+
+  /* Muted — for muted backgrounds and quiet placeholders */
+  --muted: #EBE5D9;
+  --muted-foreground: #6B6259;
+
+  /* Accent mirrors primary — preserves the one-accent rule */
+  --accent: #6E2C50;
+  --accent-foreground: #F4EFE6;
+
+  /* Destructive — muted terracotta for errors/deletes */
+  --destructive: oklch(0.52 0.17 25);
+
+  /* Hairlines, input borders — warm grey */
+  --border: #C4BDB1;
+  --input: #C4BDB1;
+
+  /* Focus ring = aubergine accent for keyboard operability */
+  --ring: #6E2C50;
+
+  /* Chart scale — warm near-monochrome (no rainbow) */
+  --chart-1: #6E2C50;
+  --chart-2: #9B6E85;
+  --chart-3: #C4A8B6;
+  --chart-4: #7A7067;
+  --chart-5: #C4BDB1;
+
+  /* Subtle rounding — keep shadcn's gentle radius */
+  --radius: 0.375rem;
+
+  /* Sidebar tokens */
+  --sidebar: #EDE7DB;
+  --sidebar-foreground: #1A1714;
+  --sidebar-primary: #6E2C50;
+  --sidebar-primary-foreground: #F4EFE6;
+  --sidebar-accent: #E6E0D4;
+  --sidebar-accent-foreground: #1A1714;
+  --sidebar-border: #C4BDB1;
+  --sidebar-ring: #6E2C50;
 }
 
+/* ── Dark theme: inverted classical palette ──────────────────── */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #1A1714;
+  --foreground: #F4EFE6;
+  --card: #231E1B;
+  --card-foreground: #F4EFE6;
+  --popover: #231E1B;
+  --popover-foreground: #F4EFE6;
+  /* Lighter aubergine tint for readability on dark ground */
+  --primary: #C07098;
+  --primary-foreground: #1A1714;
+  --secondary: #2E2824;
+  --secondary-foreground: #F4EFE6;
+  --muted: #2E2824;
+  --muted-foreground: #9E9489;
+  --accent: #C07098;
+  --accent-foreground: #1A1714;
+  --destructive: oklch(0.65 0.18 22);
+  --border: #3D3530;
+  --input: #3D3530;
+  --ring: #C07098;
+  --chart-1: #C07098;
+  --chart-2: #D4A0B8;
+  --chart-3: #E8D0DC;
+  --chart-4: #9E9489;
+  --chart-5: #3D3530;
+  --sidebar: #231E1B;
+  --sidebar-foreground: #F4EFE6;
+  --sidebar-primary: #C07098;
+  --sidebar-primary-foreground: #1A1714;
+  --sidebar-accent: #2E2824;
+  --sidebar-accent-foreground: #F4EFE6;
+  --sidebar-border: #3D3530;
+  --sidebar-ring: #C07098;
 }
 
+/* ── Base layer: typography defaults ─────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Body uses the humanist sans (Public Sans) — never Arial/Georgia */
+    @apply bg-background text-foreground font-sans;
   }
   html {
     @apply font-sans;
+  }
+  /* Headings use the serif display face (Newsreader) */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+}
+
+/* ── Greek-key hairline utility ──────────────────────────────── */
+/*
+ * .rule-meander — a subtle meander-step decorative rule.
+ *
+ * Three stacked gradient layers create a Z-step / staircase:
+ *   Layer 1: 1px top line, left 7px of each 16px cell (at y=0)
+ *   Layer 2: 1px bottom line, right 7px of each 16px cell (at y=7)
+ *   Layer 3: 2px vertical connector at x=7..9, full cell height
+ * Combined:  ████████▌         (row 0)
+ *                    ▌         (rows 1–6)
+ *                    ▌████████ (row 7)
+ *
+ * Ink at 15% opacity — NOT the accent (#6E2C50) — preserving the
+ * one-accent rule. req: frontend-shell-017
+ */
+@layer utilities {
+  .rule-meander {
+    --mc: rgba(26, 23, 20, 0.15);
+    height: 8px;
+    background-image:
+      /* top segment: left 7px of each 16px tile */
+      repeating-linear-gradient(
+        90deg,
+        var(--mc)   0px,
+        var(--mc)   7px,
+        transparent 7px,
+        transparent 16px
+      ),
+      /* bottom segment: right 7px of each 16px tile */
+      repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 9px,
+        var(--mc)   9px,
+        var(--mc)   16px
+      ),
+      /* vertical connector: 2px wide at x=7..9, full tile height */
+      repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 7px,
+        var(--mc)   7px,
+        var(--mc)   9px,
+        transparent 9px,
+        transparent 16px
+      );
+    background-size: 16px 1px, 16px 1px, 16px 8px;
+    background-position: 0 0, 0 7px, 0 0;
+    background-repeat: repeat-x;
+  }
+}
+
+/* ── Reduced-motion: disable all non-essential animation ─────── */
+/*
+ * Cuts animation and transition durations to near-zero.
+ * Overrides tw-animate-css and any component transitions.
+ * Streaming cursor blink explicitly silenced.
+ * req: frontend-shell-018
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Silence streaming/typing cursor blink */
+  .animate-blink,
+  .cursor-blink,
+  .animate-pulse {
+    animation: none !important;
   }
 }
