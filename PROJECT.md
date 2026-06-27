@@ -41,8 +41,8 @@ graded minimum is always green; if a flag's feature regresses, we flip it off an
 ### Tier 3 — full vision (what we build)
 - **Document & event management UI**: upload → background ingestion job → list → delete; update =
   re-ingest into new rows then atomic swap; admin-token protected.
-- **PostHog dashboards**: product analytics over per-turn contract fields + runtime eval scores;
-  session replay; feature flags.
+- **PostHog dashboards** (backend-only): product analytics over per-turn contract fields + runtime
+  eval scores; feature flags. No client SDK / no browser session replay.
 - **Observability bonus**: Logfire tracing of every agent/tool/httpx span with cost + latency.
 - **CI deploy gate**: eval thresholds block deploy; preDeploy migrations.
 
@@ -64,7 +64,7 @@ graded minimum is always green; if a flag's feature regresses, we flip it off an
 | Prompting | `instructions=` over `system_prompt=` | system_prompt leaks persona into downstream agent history. |
 | LLM judge | Pinned model id, temp 0, distinct provider/tier from prod; cheaper in CI; one config | Reduce self-preference bias; reproducible scoring. |
 | Harness packaging | Plain project `.claude/` (not a plugin) | Plugin agents lose hooks / mcpServers / permissionMode. |
-| Observability split | Logfire = backend + LLM tracing/cost/latency; PostHog = product analytics/replay/flags | Right tool per concern; Logfire scrubs PII, PostHog gets metadata-only. |
+| Observability split | Logfire = backend + LLM tracing/cost/latency; PostHog = product analytics/flags, **backend-only** (no client SDK, no session replay) | Right tool per concern; Logfire scrubs PII, PostHog gets metadata-only; no client SDK that could leak content/PII. |
 | Deploy | Railway (api + Postgres pgvector template); Vercel (root=frontend) | Matches stack foot-guns; reproducible IaC. |
 
 ## 4. The per-turn JSON contract
@@ -109,7 +109,7 @@ flowchart TD
 
   subgraph crosscut [Cross-cutting observability]
     lf["Logfire\nagent/tool/httpx/sqlalchemy spans\ncost + latency"]
-    ph["PostHog\nproduct analytics, replay, flags\nmetadata-only per-turn fields"]
+    ph["PostHog (backend-only)\nproduct analytics, flags\nmetadata-only per-turn fields"]
   end
 
   orch -.-> lf
@@ -130,7 +130,7 @@ flowchart TD
 | Multilingual | 10 | ES/EN/PT detection, `active_lang` lock, unsupported→fallback+`needs_review`, locale (pt-BR/pt-PT, es-ES/es-MX). |
 | API Integration & Signal Fusion | 10 | Fusion tool: ipinfo geo-IP + `lingua` + LLM `detected_lang` → `lang_confidence`; REST Countries enrich; reconcile in output_validator. |
 | Code quality | 5 | Typed deps/outputs, SQLModel/Alembic, no globals, config in one module, structured contract. |
-| Bonus: Workflow-orchestration / Observability | +10 | Logfire instrument_* spans + genai-prices cost; PostHog dashboards/replay/flags; CI deploy gate. |
+| Bonus: Workflow-orchestration / Observability | +10 | Logfire instrument_* spans + genai-prices cost; PostHog dashboards/flags (backend-only, no client replay); CI deploy gate. |
 
 ## 7. Deploy topology & env matrix
 
@@ -157,7 +157,7 @@ manifests and lockfiles are never hand-edited, and images install frozen.**
 | `POSTHOG_KEY` | Railway api | yes | Server-side product events (metadata-only). |
 | `IPINFO_TOKEN` | Railway api | yes | Geo-IP signal for fusion. |
 | `NEXT_PUBLIC_API_URL` | Vercel | no (build-time inlined) | Backend base / proxy target; redeploy to change. |
-| `NEXT_PUBLIC_POSTHOG_KEY` | Vercel | no (build-time inlined) | Client analytics via `/ingest` reverse-proxy rewrite. |
+| `NEXT_PUBLIC_SHOW_DETAILS` | Vercel | no (build-time inlined) | `1` enables the per-turn debug-fields disclosure in the chat UI (default off). |
 
 ## 8. Risks & scope cuts
 
@@ -165,7 +165,7 @@ manifests and lockfiles are never hand-edited, and images install frozen.**
 config flag and degrades to `needs_review=true` rather than failing the turn. Cut order if time/quality slips:
 
 1. **PageIndex / hybrid RAG** — already deferred; pgvector cosine top-k is the shipped path.
-2. **PostHog session replay + dashboards** — flag off; Logfire alone still proves observability.
+2. **PostHog dashboards** (backend-only; no client session replay) — flag off; Logfire alone still proves observability.
 3. **Doc/event management UI** — fall back to admin API + curl; UI is presentation, not graded core.
 4. **CI deploy gate** — keep the eval suite + exit code; loosen the auto-block to a warning if flaky.
 5. **REST Countries enrichment** — degrade locale to country-default (pt→pt-BR, es→es-MX) if the API errors.

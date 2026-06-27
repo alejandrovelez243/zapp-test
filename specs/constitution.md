@@ -168,13 +168,15 @@ eval scores and per-turn contract fields also feed PostHog dashboards.
   installs are frozen in CI/images.
 - **Data / RAG:** Postgres + pgvector (HNSW index), pgvector-only, hybrid-ready; SQLModel `Document` /
   `DocumentChunk`; background ingestion; atomic re-ingest swap.
-- **Frontend:** Next.js on Vercel (Root Directory `frontend/`; `/ingest` reverse-proxy for PostHog);
-  package manager **pnpm** (deps added via `pnpm add` only).
+- **Frontend:** Next.js on Vercel (Root Directory `frontend/`); package manager **pnpm**
+  (deps added via `pnpm add` only). **No analytics SDK in the frontend** — PostHog is
+  backend-only (see Observability).
 - **Signal fusion APIs:** geo-IP (`ipinfo.io` / `ipapi.co`), `lingua` detector, REST Countries.
 - **Evaluation:** `pydantic-evals` (Dataset, Case, evaluators, reports).
 - **Observability:** Logfire (backend + LLM tracing/cost/latency, PII-scrubbed) and PostHog (product
-  analytics, session replay, feature flags, metadata-only for student messages). Pick one region
-  (US or EU) consistently across both.
+  analytics + feature flags, **server-side only**, metadata-only for student messages — never raw
+  content). **No client-side PostHog**, so no browser session replay. Pick one region (US or EU)
+  consistently across both.
 - **LLM provider:** any PydanticAI-supported provider via the **Pydantic AI Gateway**
   (the ONLY supported path — no direct-provider fallback). ONE key (`PYDANTIC_AI_GATEWAY_API_KEY`,
   obtained from logfire.pydantic.dev, format `pylf_v1_us_...`) routes all traffic; model strings use
