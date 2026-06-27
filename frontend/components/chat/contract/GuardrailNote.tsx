@@ -56,7 +56,7 @@ export function GuardrailNote({ guardrails, lang }: GuardrailNoteProps) {
     <span
       className="
         font-sans text-[0.6rem] italic leading-none
-        text-muted-foreground/45
+        text-muted-foreground
         select-none
       "
     >

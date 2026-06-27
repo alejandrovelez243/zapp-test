@@ -81,7 +81,7 @@ export function ReviewMarker({ needsReview, lang }: ReviewMarkerProps) {
             inline-flex items-center pl-2
             border-l-[1.5px] border-muted-foreground/30
             bg-transparent
-            font-sans text-[0.6rem] text-muted-foreground/45
+            font-sans text-[0.6rem] text-muted-foreground
             leading-none select-none cursor-help
             focus-visible:outline-none
             focus-visible:ring-1 focus-visible:ring-ring

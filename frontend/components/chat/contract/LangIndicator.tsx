@@ -47,7 +47,7 @@ export function LangIndicator({ activeLang, lang }: LangIndicatorProps) {
       className="
         inline-flex items-center
         font-mono text-[0.55rem] tracking-widest uppercase leading-none
-        text-muted-foreground/40
+        text-muted-foreground
         select-none
       "
     >

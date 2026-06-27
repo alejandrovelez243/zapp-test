@@ -293,7 +293,9 @@ a {
 /* ── Reduced-motion: disable all non-essential animation ─────── */
 /*
  * Cuts animation and transition durations to near-zero.
- * Overrides tw-animate-css and any component transitions.
+ * Overrides tw-animate-css (animate-in / animate-out / slide-in-from-* /
+ * fade-in / zoom-in used by tooltip and any future animated primitives),
+ * base-ui collapsible panel height transitions, and all custom transitions.
  * Streaming cursor blink explicitly silenced.
  * req: frontend-shell-018
  */
@@ -312,5 +314,17 @@ a {
   .cursor-blink,
   .animate-pulse {
     animation: none !important;
+  }
+
+  /* Silence tooltip enter/exit animations (tw-animate-css classes applied via
+     data-state selectors on base-ui Tooltip.Popup). The universal duration
+     override above already catches these, but naming them here makes intent
+     explicit and protects against any future `animation: none` shorthand
+     that might reset the duration.                                           */
+  [data-state="delayed-open"],
+  [data-state="open"],
+  [data-state="closed"] {
+    animation: none !important;
+    transition: none !important;
   }
 }

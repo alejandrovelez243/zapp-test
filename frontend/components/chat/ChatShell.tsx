@@ -84,7 +84,7 @@ export function ChatShell() {
      * The inner wrapper is centered and max-width ~66ch for a readable measure.
      * req frontend-shell-001: single-column chat surface.
      */
-    <div className="flex flex-col flex-1 min-h-0 bg-background text-foreground">
+    <main className="flex flex-col flex-1 min-h-0 bg-background text-foreground">
       {/*
        * Centered content column: max-w matches the --width-measure CSS token
        * (~66ch) for a classical reading measure.  Horizontal padding gives
@@ -163,6 +163,6 @@ export function ChatShell() {
           />
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -77,8 +77,8 @@ export function DetailsDisclosure({ contract, lang }: DetailsDisclosureProps) {
         className="
           inline-flex items-center gap-1
           font-mono text-[0.55rem] tracking-widest uppercase leading-none
-          text-muted-foreground/40
-          hover:text-muted-foreground/60
+          text-muted-foreground
+          hover:text-foreground/70
           bg-transparent cursor-pointer
           transition-colors
           focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
@@ -105,12 +105,12 @@ export function DetailsDisclosure({ contract, lang }: DetailsDisclosureProps) {
         <dl
           className="
             font-mono text-[0.6rem] leading-relaxed
-            text-muted-foreground/55
+            text-muted-foreground
             space-y-1 pl-3 border-l border-border
           "
         >
           <div className="flex gap-2 items-baseline">
-            <dt className="shrink-0 text-muted-foreground/35">
+            <dt className="shrink-0 text-muted-foreground italic">
               {t(lang, "details.label.langConfidence")}
             </dt>
             <dd className="tabular-nums">
@@ -119,7 +119,7 @@ export function DetailsDisclosure({ contract, lang }: DetailsDisclosureProps) {
           </div>
 
           <div className="flex gap-2 items-baseline">
-            <dt className="shrink-0 text-muted-foreground/35">
+            <dt className="shrink-0 text-muted-foreground italic">
               {t(lang, "details.label.confidenceScore")}
             </dt>
             <dd className="tabular-nums">
@@ -128,14 +128,14 @@ export function DetailsDisclosure({ contract, lang }: DetailsDisclosureProps) {
           </div>
 
           <div className="flex gap-2 items-baseline">
-            <dt className="shrink-0 text-muted-foreground/35">
+            <dt className="shrink-0 text-muted-foreground italic">
               {t(lang, "details.label.detectedCountry")}
             </dt>
             <dd>{contract.detected_country}</dd>
           </div>
 
           <div className="flex gap-2 items-baseline">
-            <dt className="shrink-0 text-muted-foreground/35">
+            <dt className="shrink-0 text-muted-foreground italic">
               {t(lang, "details.label.normalizedText")}
             </dt>
             <dd className="break-all">{contract.final_normalized_text}</dd>
