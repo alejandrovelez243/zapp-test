@@ -25,12 +25,17 @@
 // Shared types
 // ---------------------------------------------------------------------------
 
+/**
+ * Document ingestion lifecycle states.
+ * req: admin-console-011, admin-console-015
+ */
+export type DocStatus = 'pending' | 'ingesting' | 'ready' | 'failed';
+
 /** One row from GET /documents. */
 export interface DocumentSummary {
   id: number;
   name: string;
-  /** "pending" | "ingesting" | "ready" | "failed" */
-  status: string;
+  status: DocStatus;
 }
 
 /** Returned by POST /documents and PUT /documents/{id} on success (202). */
