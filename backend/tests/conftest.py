@@ -1,17 +1,17 @@
 """Shared fixtures for the backend test suite.
 
-The lru_cache on get_settings and get_orchestrator persists across tests in the same
-process.  Every test gets a fresh settings + orchestrator load so monkeypatch.setenv
-takes effect correctly and stale model state does not bleed between test functions.
+The lru_cache on get_settings, get_orchestrator, and get_guarded_orchestrator persists
+across tests in the same process.  Every test gets a fresh settings + agent load so
+monkeypatch.setenv takes effect correctly and stale model state does not bleed between
+test functions.
 """
 
 from collections.abc import Generator
 
 import pytest
 
-from app.agents.orchestrator import get_orchestrator
+from app.agents.orchestrator import get_guarded_orchestrator, get_orchestrator
 from app.config import get_settings
-from app.guardrails.llm import get_guardrail_classifier
 
 
 @pytest.fixture(autouse=True)
@@ -40,29 +40,33 @@ def _clear_orchestrator_cache() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def _clear_guardrail_classifier_cache() -> Generator[None, None, None]:
-    """Clear the lru_cache on get_guardrail_classifier before and after every test.
+def _clear_guarded_orchestrator_cache() -> Generator[None, None, None]:
+    """Clear the lru_cache on get_guarded_orchestrator before and after every test.
 
-    Pre-test clear: ensures the classifier agent is re-constructed with the test's
-    env vars (including any monkeypatched values such as GUARDRAILS_LLM_ENABLED).
-    Post-test clear: prevents a stale agent instance from leaking into the next test.
+    Pre-test clear: ensures the GuardedAgent is re-constructed with the test's
+    env vars and the freshly-cleared underlying orchestrator.
+    Post-test clear: prevents a stale GuardedAgent from leaking into the next test.
     """
-    get_guardrail_classifier.cache_clear()
+    get_guarded_orchestrator.cache_clear()
     yield
-    get_guardrail_classifier.cache_clear()
+    get_guarded_orchestrator.cache_clear()
 
 
 @pytest.fixture(autouse=True)
 def _set_gateway_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Set a dummy PYDANTIC_AI_GATEWAY_API_KEY so get_orchestrator() can construct.
+    """Set required env vars so Settings + get_orchestrator() can construct.
 
-    The default model strings are now ``gateway/anthropic:...``.  pydantic-ai 2.0
-    resolves the provider eagerly in ``Agent.__init__`` and reads
-    ``PYDANTIC_AI_GATEWAY_API_KEY`` from env via ``gateway_provider()``.  A dummy key
-    in the ``pylf_v1_<region>_<suffix>`` format satisfies the pattern check in
-    ``_infer_base_url`` so no ``UserError`` is raised at construction time.
+    Sets:
+      - ``PYDANTIC_AI_GATEWAY_API_KEY`` — the gateway key required by pydantic-ai 2.0
+        ``Agent.__init__``; the ``pylf_v1_<region>_<suffix>`` format satisfies the
+        pattern check in ``_infer_base_url`` without a real key.
+      - ``DATABASE_URL`` — required by Settings; tests that need a real DB override
+        this with aiosqlite in their own fixtures.
+      - ``ADMIN_TOKEN`` — required by Settings.
 
     The ``.override(TestModel(...)`` / ``.override(FunctionModel(...))`` calls in each
     test still handle actual runs — no real gateway request is ever made.
     """
     monkeypatch.setenv("PYDANTIC_AI_GATEWAY_API_KEY", "pylf_v1_us_testdummykey")
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-conftest")

@@ -44,12 +44,24 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai_guardrails import GuardedAgent
+from pydantic_ai_guardrails.guardrails.input import (
+    pii_detector,
+    prompt_injection,
+    toxicity_detector,
+)
 
 from app.agents.faq import get_faq_agent  # lazy factory — key-free on import
 from app.config import LANG_DISPLAY_NAMES, get_settings  # single source for display names
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
 from app.fusion.reconcile import reconcile
+from app.guardrails.adapter import (
+    pii_output_guard,
+    secret_input_guard,
+    secret_output_guard,
+    toxicity_output_guard,
+)
 from app.lang.detector import LanguageDetector
 from app.lang.fusion import compute_lang_confidence
 from app.lang.state import ActiveLangDecision
@@ -574,3 +586,91 @@ def get_orchestrator() -> Agent[AgentDeps, TurnOutput]:
     agent.output_validator(_reconcile_fusion)
     agent.output_validator(_reconcile_rag)
     return agent
+
+
+@lru_cache(maxsize=1)
+def get_guarded_orchestrator() -> GuardedAgent[AgentDeps, TurnOutput]:
+    """Wrap ``get_orchestrator()`` in ``GuardedAgent`` with framework guardrails (lazy factory).
+
+    Builds the full guardrail stack around the orchestrator:
+      Input guards  (run before model call, block on tripwire):
+        1. prompt_injection() — blocks injection + jailbreak patterns     req: guardrails-003, -004
+        2. toxicity_detector() — blocks toxic input                       req: guardrails-005
+        3. pii_detector() — blocks messages with PII                      req: guardrails-006
+        4. secret_input_guard() — blocks pasted API keys / JWT tokens     req: guardrails-010
+      Output guards (run after model reply, block/replace on tripwire):
+        1. toxicity_output_guard() — blocks toxic replies                 req: guardrails-009
+        2. secret_output_guard() — blocks secret / prompt-fragment leaks  req: guardrails-010
+        3. pii_output_guard() — blocks PII in replies                     req: guardrails-008
+        4. llm_judge (optional) — added when guardrails_llm_enabled=True  req: guardrails-015
+
+    ``on_block="raise"`` so the ``/chat`` boundary (and ``evals/task.py``) catch
+    ``InputGuardrailViolation`` / ``OutputGuardrailViolation`` and emit the contract.
+
+    Caching mirrors ``get_orchestrator()`` — key-free on import, lazy first call.
+    req: guardrails-001, guardrails-003..010, guardrails-014, guardrails-015, guardrails-016
+    Design: specs/guardrails/design.md §2.1
+    """
+    settings = get_settings()
+
+    # Additional multilingual injection / jailbreak patterns not covered by the
+    # package's English-only defaults.  Platform serves ES, EN, PT (CLAUDE.md).
+    # req: guardrails-003, guardrails-004
+    _multilingual_injection: list[str] = [
+        # Spanish: "Ignora las instrucciones previas" / "muestra el system prompt"
+        r"ignora\s+(las\s+)?(instrucciones|reglas|comandos)\s+(previas?|anteriores?)",
+        r"muestra\s+(el\s+)?(system\s+prompt|instrucciones|prompt)",
+        r"olvida\s+(las\s+)?(instrucciones|reglas|comandos)\s+(anteriores?|previas?)",
+        # Portuguese: "ignore as instruções anteriores"
+        r"ignore\s+(as\s+)?instru[çc][õo]es\s+anteriores",
+        r"mostre\s+(o\s+)?system\s+prompt",
+        # Broader jailbreak: "no rules / no restrictions / pretend you have no …"
+        r"pretend\s+you\s+(have|are)\s+no\b",
+        r"no\s+rules\s+(and|or)\s+no\s+restrictions",
+        r"without\s+(any\s+)?(rules|restrictions|limitations|guidelines)",
+    ]
+
+    input_guards = [
+        prompt_injection(custom_patterns=_multilingual_injection),  # guardrails-003, -004
+        # Exclude "profanity" category: the package's `h[e\*]ll\w*` pattern is a
+        # false positive on everyday words like "hello".  The meaningful toxic
+        # categories (hate_speech, threats, personal_attacks) cover guardrails-005.
+        # req: guardrails-005
+        toxicity_detector(categories=["hate_speech", "threats", "personal_attacks"]),
+        pii_detector(),  # req: guardrails-006 (blocks on PII; framework default action)
+        secret_input_guard(),  # req: guardrails-010
+    ]
+
+    output_guards: list[object] = [
+        toxicity_output_guard(),  # req: guardrails-009
+        secret_output_guard(),  # req: guardrails-010
+        pii_output_guard(),  # req: guardrails-008
+    ]
+
+    if settings.guardrails_llm_enabled:
+        # Optional LLM judge augments pattern-based guards with semantic reasoning.
+        # Wired only when guardrails_llm_enabled=True so zero gateway calls are made
+        # by default (deterministic-only mode).  req: guardrails-015
+        from pydantic_ai_guardrails.guardrails.output import llm_judge
+
+        output_guards.append(
+            llm_judge(
+                criteria=[
+                    "Output contains no toxic, hateful, or harmful language",
+                    "Output does not reveal API keys, secrets, or internal instructions",
+                    "Output is on-topic for a philosophy school assistant",
+                ],
+                judge_model=settings.judge_model,
+                threshold=0.7,
+                mode="binary",
+            )
+        )
+
+    return GuardedAgent(
+        get_orchestrator(),
+        input_guardrails=input_guards,
+        output_guardrails=output_guards,
+        on_block="raise",
+        # parallel=False (default) keeps serial evaluation so the first-match guard
+        # blocks immediately and subsequent guards don't run — predictable ordering.
+    )
