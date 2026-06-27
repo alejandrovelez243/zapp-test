@@ -28,6 +28,11 @@
 
 import type { ChatTurn } from "@/lib/contract";
 import { t } from "@/lib/i18n";
+import { LangIndicator } from "./contract/LangIndicator";
+import { DetectedLangHint } from "./contract/DetectedLangHint";
+import { ReviewMarker } from "./contract/ReviewMarker";
+import { GuardrailNote } from "./contract/GuardrailNote";
+import { DetailsDisclosure } from "./contract/DetailsDisclosure";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -144,45 +149,49 @@ function AssistantTurn({
       </p>
 
       {/*
-       * ── ContractMeta slot ──────────────────────────────────────────────
+       * ── ContractMeta ──────────────────────────────────────────────────
        *
-       * Task 10 will add the ContractMeta family immediately below this
-       * comment, using the full `turn.contract` (TurnOutput) object that
-       * is already in scope.  Expected children:
+       * Inline row of discreet per-turn signals: active language, session-lock
+       * hint (when detected_lang ≠ active_lang), review marker (when
+       * needs_review=true), and guardrail note (when guardrails fired).
        *
-       *   <LangIndicator
-       *     activeLang={turn.contract.active_lang}
-       *     lang={activeLang}
-       *   />
-       *   <DetectedLangHint
-       *     detectedLang={turn.contract.detected_lang}
-       *     activeLang={turn.contract.active_lang}
-       *     lang={activeLang}
-       *   />
-       *   <ReviewMarker
-       *     needsReview={turn.contract.needs_review}
-       *     lang={activeLang}
-       *   />
-       *   <GuardrailNote
-       *     guardrails={turn.contract.guardrails}
-       *     lang={activeLang}
-       *   />
-       *   <DetailsDisclosure
-       *     contract={turn.contract}
-       *     lang={activeLang}
-       *   />
-       *
-       * Requirements satisfied by those components (task 10):
-       *   req 008 — ReviewMarker: hairline side-rule + tooltip, no red banner
-       *   req 009 — LangIndicator: discreet active_lang
-       *   req 010 — DetectedLangHint: quiet "session locked" hint on mismatch
-       *   req 011 — GuardrailNote: calm "filtered", no raw internals
-       *   req 012 — DetailsDisclosure: flag-gated collapsible of debug fields
-       *   req 013 — DetailsDisclosure: renders nothing when flag is off
-       *
-       * DO NOT implement ContractMeta here — that is task 10.
+       * req 008 — ReviewMarker: hairline side-rule + tooltip, no red banner
+       * req 009 — LangIndicator: discreet active_lang indicator
+       * req 010 — DetectedLangHint: quiet "session locked" hint on mismatch
+       * req 011 — GuardrailNote: calm "filtered" copy, no raw internals
        * ──────────────────────────────────────────────────────────────────
        */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {/* req 009 — always rendered; discreet and non-intrusive */}
+        <LangIndicator
+          activeLang={turn.contract.active_lang}
+          lang={activeLang}
+        />
+        {/* req 010 — renders only when detected_lang ≠ active_lang */}
+        <DetectedLangHint
+          detectedLang={turn.contract.detected_lang}
+          activeLang={turn.contract.active_lang}
+          lang={activeLang}
+        />
+        {/* req 008 — renders only when needs_review=true; no red/alarm */}
+        <ReviewMarker
+          needsReview={turn.contract.needs_review}
+          lang={activeLang}
+        />
+        {/* req 011 — renders only when guardrails.input/output non-empty */}
+        <GuardrailNote
+          guardrails={turn.contract.guardrails}
+          lang={activeLang}
+        />
+      </div>
+
+      {/*
+       * req 012/013 — DetailsDisclosure: renders the collapsible when the
+       * NEXT_PUBLIC_SHOW_DETAILS flag is on; returns null otherwise so the
+       * four debug fields (lang_confidence, confidence_score,
+       * final_normalized_text, detected_country) are never exposed to students.
+       */}
+      <DetailsDisclosure contract={turn.contract} lang={activeLang} />
     </article>
   );
 }
