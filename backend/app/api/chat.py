@@ -1,36 +1,29 @@
 """POST /chat FastAPI boundary — language detection → guardrails → orchestrator → persistence.
 
 Wires the full per-turn pipeline:
-  detect → resolve_active_lang → build AgentDeps → guarded-orchestrator.run →
-  persist session + messages → return TurnOutput.
+  detect → resolve_active_lang → input guardrails → build AgentDeps → orchestrator.run →
+  output guardrails → persist session + messages → return TurnOutput.
 
-With ``guardrails_enabled=True`` (default) the turn runs through
-``get_guarded_orchestrator()`` (a ``GuardedAgent`` wrapping the orchestrator).
-  - ``InputGuardrailViolation`` → safe-refusal ``TurnOutput`` before any model call.
-  - ``OutputGuardrailViolation`` → safe-refusal reply; guardrails.output populated.
-With ``guardrails_enabled=False`` the plain orchestrator is used directly.
-
-Catches ``ModelHTTPError | UnexpectedModelBehavior | UsageLimitExceeded`` and
-degrades gracefully (never returns a 500 for model errors).
+Catches ``ModelHTTPError | UnexpectedModelBehavior | UsageLimitExceeded`` and degrades
+gracefully (never returns a 500 for model errors).
 
 Requirements satisfied:
   multilingual-001 — emit the full nine-field TurnOutput on every /chat turn
   multilingual-004 — first-turn active_lang lock persisted via update_language_state
   multilingual-008 — locked + unsupported → keep active_lang, still persisted
   multilingual-009 — first-turn unsupported → fallback "en", session persisted
-  guardrails-001 — input guardrails run before the model; output guardrails after
+  guardrails-001 — input guardrails run before the agent; output guardrails run after
   guardrails-002 — TurnOutput.guardrails populated from triggered guardrail names
   guardrails-003 — prompt_injection → block (no model call)
-  guardrails-004 — jailbreak → block (no model call; merged into prompt_injection)
+  guardrails-004 — jailbreak → block (no model call)
   guardrails-005 — toxicity (input) → block (no model call)
-  guardrails-006 — pii_detector → block + refusal; name recorded in guardrails.input
-  guardrails-007 — off-topic handling (framework's toxicity guard catches extreme cases)
-  guardrails-008 — pii in output → block; pii_output guard fires
-  guardrails-009 — toxicity in output → block; toxicity_output guard fires
-  guardrails-010 — secret in input or output → block; names recorded
+  guardrails-006 — pii_detector → redact + continue; gr_in.text passed to orchestrator
+  guardrails-007 — off_topic → flag; name carried to guardrails.input
+  guardrails-008 — pii_leak in output → redact turn.reply
+  guardrails-009 — toxicity in output → block turn.reply with safe refusal
+  guardrails-010 — secret_leak in output → block turn.reply with safe refusal
   guardrails-012 — block path emits full nine-field TurnOutput, never a 500
-  guardrails-013 — Logfire span per turn; PostHog event with NAMES ONLY (no content)
-  guardrails-016 — guardrails_enabled=False → plain orchestrator, guardrails empty
+  guardrails-013 — Logfire span per guardrail check; PostHog event with NAMES ONLY
 
 Observability (Task 10):
   multilingual-001 / multilingual-005 — one Logfire ``chat_turn`` span wraps the full
@@ -51,14 +44,9 @@ from pydantic import BaseModel
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage, UsageLimits
-from pydantic_ai_guardrails import InputGuardrailViolation, OutputGuardrailViolation
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.orchestrator import (
-    degraded_turn,
-    get_guarded_orchestrator,
-    get_orchestrator,
-)
+from app.agents.orchestrator import degraded_turn, get_orchestrator
 from app.agents.session import ConversationSession, SessionRepository
 from app.config import Settings, get_settings
 from app.contract import GuardrailReport, TurnOutput
@@ -66,7 +54,7 @@ from app.db import get_session, get_sessionmaker
 from app.deps import AgentDeps
 from app.eval.runtime import evaluate_conversation, is_goodbye
 from app.fusion.geo import GeoContext, GeoFusionService
-from app.guardrails.adapter import category_for, input_name, output_name
+from app.guardrails.engine import GuardrailEngine, GuardrailResult
 from app.guardrails.refusal import safe_refusal
 from app.lang.detector import DetectionResult
 from app.lang.pipeline import LanguagePipeline
@@ -171,6 +159,43 @@ def _emit_telemetry(
         )
 
 
+async def _blocked_turn(
+    *,
+    gr_in: GuardrailResult,
+    decision: ActiveLangDecision,
+    det: DetectionResult,
+    session_id: str,
+    repo: SessionRepository,
+    session: ConversationSession,
+    db: AsyncSession,
+    settings: Settings,
+) -> TurnOutput:
+    """Short-circuit path: persist session state and return a safe refusal without calling the LLM.
+
+    The orchestrator is never reached, so this path works with no gateway key.
+
+    req: guardrails-003, guardrails-004, guardrails-005, guardrails-012, guardrails-013
+    """
+    await _persist_language_state(repo, session, db, decision, settings)
+    await db.commit()
+
+    # Primary category drives the refusal wording; fail-safe to "prompt_injection".
+    primary: str = gr_in.triggered[0] if gr_in.triggered else "prompt_injection"
+    blocked = TurnOutput(
+        reply=safe_refusal(decision.active_lang, primary),
+        detected_lang=det.lang or decision.active_lang,
+        active_lang=decision.active_lang,
+        lang_confidence=0.0,
+        final_normalized_text="",
+        detected_country=None,
+        confidence_score=0.0,
+        needs_review=True,
+        guardrails=GuardrailReport(input=gr_in.triggered),
+    )
+    _emit_telemetry(session_id, blocked, gr_in.triggered, [])
+    return blocked
+
+
 def _build_agent_deps(
     db: AsyncSession,
     http: httpx.AsyncClient,
@@ -196,42 +221,7 @@ def _build_agent_deps(
     )
 
 
-def _build_block_turn(
-    active_lang: str,
-    det: DetectionResult,
-    *,
-    in_names: list[str] | None = None,
-    out_names: list[str] | None = None,
-    geo_country: str | None = None,
-) -> TurnOutput:
-    """Build a safe-refusal TurnOutput for the input-block or output-block path.
-
-    All nine contract fields are populated.  ``needs_review=True`` signals the turn
-    was blocked.  ``geo_country`` is only set when a geo call completed (output-block);
-    input-blocks short-circuit before geo is useful.
-
-    req: guardrails-012 — full nine-field TurnOutput, never a 500
-    req: guardrails-011 — reply in active_lang
-    """
-    all_names = (in_names or []) + (out_names or [])
-    primary = category_for(all_names)
-    return TurnOutput(
-        reply=safe_refusal(active_lang, primary),
-        detected_lang=det.lang or active_lang,
-        active_lang=active_lang,
-        lang_confidence=0.0,
-        final_normalized_text="",
-        detected_country=geo_country,
-        confidence_score=0.0,
-        needs_review=True,
-        guardrails=GuardrailReport(
-            input=in_names or [],
-            output=out_names or [],
-        ),
-    )
-
-
-async def _run_turn(
+async def _run_orchestrator_turn(
     *,
     db: AsyncSession,
     repo: SessionRepository,
@@ -244,78 +234,28 @@ async def _run_turn(
     history: list[ModelMessage] | None,
     settings: Settings,
 ) -> TurnOutput:
-    """Geo-resolve → build deps → run (guarded or plain) orchestrator; degrade on errors.
+    """Geo-resolve → build deps → run orchestrator; degrade on model errors.
 
-    With ``settings.guardrails_enabled``:
-      - Runs through ``GuardedAgent``; catches ``InputGuardrailViolation`` /
-        ``OutputGuardrailViolation`` and returns a safe-refusal turn.
-    Without ``settings.guardrails_enabled``:
-      - Runs through the plain orchestrator; ``guardrails`` fields default to empty.
-
-    Model errors (``ModelHTTPError`` / ``UnexpectedModelBehavior`` /
-    ``UsageLimitExceeded``) are caught and degraded gracefully — never a 500.
-
-    req: multilingual-001, multilingual-004, guardrails-001, guardrails-012,
-         guardrails-013, guardrails-016, orchestrator-and-fusion-002, -013
+    req: multilingual-001, multilingual-004, guardrails-006,
+         orchestrator-and-fusion-002, orchestrator-and-fusion-013
     """
     usage = RunUsage()
     geo: GeoContext = GeoContext()
-    active_lang = decision.active_lang
-
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http:
             geo = await GeoFusionService(http, settings).resolve(request_ip)
             deps = _build_agent_deps(db, http, session_id, request_ip, decision, det, geo)
-
-            if settings.guardrails_enabled:
-                with logfire.span("guardrails.run"):
-                    try:
-                        result = await get_guarded_orchestrator().run(
-                            message,
-                            deps=deps,
-                            message_history=history,
-                            usage=usage,
-                            usage_limits=UsageLimits(
-                                request_limit=6,
-                                tool_calls_limit=8,
-                                total_tokens_limit=20_000,
-                            ),
-                        )
-                    except InputGuardrailViolation as exc:
-                        # Input guard fired — no model call was made.
-                        # req: guardrails-003, guardrails-004, guardrails-005,
-                        #      guardrails-006, guardrails-010, guardrails-012
-                        in_names = [input_name(exc.guardrail_name)]
-                        await _persist_language_state(repo, session, db, decision, settings)
-                        await db.commit()
-                        return _build_block_turn(active_lang, det, in_names=in_names)
-                    except OutputGuardrailViolation as exc:
-                        # Output guard fired after model ran — replace reply with refusal.
-                        # req: guardrails-008, guardrails-009, guardrails-010, guardrails-012
-                        out_names = [output_name(exc.guardrail_name)]
-                        await _persist_language_state(repo, session, db, decision, settings)
-                        await db.commit()
-                        return _build_block_turn(
-                            active_lang,
-                            det,
-                            out_names=out_names,
-                            geo_country=geo.country,
-                        )
-            else:
-                # guardrails_enabled=False → plain orchestrator; no guardrail checks.
-                # req: guardrails-016
-                result = await get_orchestrator().run(
-                    message,
-                    deps=deps,
-                    message_history=history,
-                    usage=usage,
-                    usage_limits=UsageLimits(
-                        request_limit=6,
-                        tool_calls_limit=8,
-                        total_tokens_limit=20_000,
-                    ),
-                )
-
+            result = await get_orchestrator().run(
+                message,
+                deps=deps,
+                message_history=history,
+                usage=usage,
+                usage_limits=UsageLimits(
+                    request_limit=6,
+                    tool_calls_limit=8,
+                    total_tokens_limit=20_000,
+                ),
+            )
     except (ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded) as exc:
         log.warning(
             "Orchestrator error — degrading turn (session=%r): %s: %s",
@@ -325,15 +265,45 @@ async def _run_turn(
         )
         await _persist_language_state(repo, session, db, decision, settings)
         await db.commit()
-        turn = degraded_turn(active_lang)
+        turn = degraded_turn(decision.active_lang)
         turn.detected_country = geo.country  # req: orchestrator-and-fusion-013
         return turn
 
     await _persist_language_state(repo, session, db, decision, settings)
     await repo.save_messages(session_id, result.all_messages())
     await db.commit()
-    out: TurnOutput = result.output
-    return out
+    return result.output
+
+
+def _apply_output_guardrails(
+    turn: TurnOutput,
+    engine: GuardrailEngine,
+    gr_in: GuardrailResult,
+) -> tuple[TurnOutput, GuardrailResult]:
+    """Run output guardrails, apply block/redact, and merge names into the contract.
+
+    Modifies *turn* in place (reply replacement / needs_review update) and returns
+    the updated turn together with the output GuardrailResult for telemetry.
+
+    req: guardrails-001, guardrails-002, guardrails-008, guardrails-009,
+         guardrails-010, guardrails-013
+    """
+    with logfire.span("guardrails.output"):
+        gr_out: GuardrailResult = engine.run_output(turn.reply)
+
+    if gr_out.blocked:
+        # Block wins over redact — replace with safe refusal.
+        # req: guardrails-009, guardrails-010
+        primary_out: str = gr_out.triggered[0] if gr_out.triggered else "secret_leak"
+        turn.reply = safe_refusal(turn.active_lang, primary_out)
+    elif gr_out.action == "redact":
+        # Scrub PII from reply text.  req: guardrails-008
+        turn.reply = gr_out.text
+
+    # Merge guardrail names and OR needs_review.  req: guardrails-002
+    turn.guardrails = GuardrailReport(input=gr_in.triggered, output=gr_out.triggered)
+    turn.needs_review = turn.needs_review or bool(gr_in.triggered or gr_out.triggered)
+    return turn, gr_out
 
 
 # ---------------------------------------------------------------------------
@@ -348,13 +318,11 @@ async def chat(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> TurnOutput:
-    """Full per-turn pipeline: detect → resolve → guardrailed-agent → persist.
+    """Full per-turn pipeline: detect → resolve → guardrails → agent → guardrails → persist.
 
-    Never returns a 500 — model errors and guardrail blocks degrade to a safe
-    TurnOutput with needs_review=True.
-
+    Never returns a 500 — model errors degrade to a safe TurnOutput with needs_review=True.
     req: multilingual-001, multilingual-004, multilingual-008, multilingual-009
-    req: guardrails-001..010, guardrails-012, guardrails-013, guardrails-016
+    req: guardrails-001..010, guardrails-012, guardrails-013
     """
     settings = get_settings()
     with logfire.span("chat_turn", session_id=req.session_id):
@@ -366,9 +334,25 @@ async def chat(
         decision = pipeline.resolve(session, det)
 
         request_ip: str = request.client.host if request.client else "unknown"
-        history = await repo.load_messages(req.session_id)
 
-        turn = await _run_turn(
+        engine = GuardrailEngine(settings)
+        with logfire.span("guardrails.input"):
+            gr_in: GuardrailResult = await engine.run_input(req.message, decision.active_lang)
+
+        if gr_in.blocked:
+            return await _blocked_turn(
+                gr_in=gr_in,
+                decision=decision,
+                det=det,
+                session_id=req.session_id,
+                repo=repo,
+                session=session,
+                db=db,
+                settings=settings,
+            )
+
+        history = await repo.load_messages(req.session_id)
+        turn = await _run_orchestrator_turn(
             db=db,
             repo=repo,
             session=session,
@@ -376,17 +360,13 @@ async def chat(
             det=det,
             session_id=req.session_id,
             request_ip=request_ip,
-            message=req.message,
+            message=gr_in.text,
             history=history,
             settings=settings,
         )
 
-        _emit_telemetry(
-            req.session_id,
-            turn,
-            turn.guardrails.input,
-            turn.guardrails.output,
-        )
+        turn, gr_out = _apply_output_guardrails(turn, engine, gr_in)
+        _emit_telemetry(req.session_id, turn, gr_in.triggered, gr_out.triggered)
 
         if settings.runtime_eval_enabled and is_goodbye(req.message, decision.active_lang):
             background_tasks.add_task(_background_eval, req.session_id)

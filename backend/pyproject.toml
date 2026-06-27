@@ -96,7 +96,6 @@ files = ["app"]
 module = [
     "pgvector.*",
     "posthog.*",
-    "pydantic_ai_guardrails.*",
 ]
 ignore_missing_imports = true
 

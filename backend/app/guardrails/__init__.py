@@ -1,19 +1,18 @@
-"""Guardrails package — pydantic-ai-guardrails framework integration.
+"""Guardrails package — deterministic multilingual detectors (ES/EN/PT).
 
-The hand-rolled detectors/engine/llm modules have been replaced by the
-``pydantic-ai-guardrails`` ``GuardedAgent`` framework (see ``get_guarded_orchestrator``
-in ``app/agents/orchestrator.py``).
+Exposes the :class:`~app.guardrails.detectors.Detectors` class and
+:class:`~app.guardrails.detectors.PiiMatch` data model from
+``app.guardrails.detectors``.  The engine (``engine.py``) and refusal strings
+(``refusal.py``) live in sibling modules written by other specialists in parallel;
+they are NOT imported here so this init stays safe to import independently.
 
-This package now exposes:
-  - ``safe_refusal`` — multilingual on-brand refusal strings (ES/EN/PT).
-  - ``adapter`` — name-mapping from framework guard names → contract vocabulary.
-
-Requirements: guardrails-001..019
-Design: specs/guardrails/design.md
+Requirements: guardrails-003..guardrails-010, guardrails-011, guardrails-014
+Design: specs/guardrails/design.md §2.1
 """
 
-from app.guardrails.refusal import safe_refusal
+from app.guardrails.detectors import Detectors, PiiMatch
 
 __all__ = [
-    "safe_refusal",
+    "Detectors",
+    "PiiMatch",
 ]

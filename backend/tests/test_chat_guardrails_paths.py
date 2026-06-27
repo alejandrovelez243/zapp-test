@@ -1,21 +1,21 @@
 """Boundary guardrail integration tests via TestModel + aiosqlite (POST /chat).
 
-Covers paths NOT already in test_chat_guardrails_block.py:
+Covers paths NOT already in test_chat_guardrails_block.py (block path only)
+or test_guardrails_llm.py (LLM layer), so there is no duplication:
 
-  - PII input → framework blocks; guardrails.input=['pii_detector'];
-    needs_review=True; no model call                               (guardrails-001/-002/-006)
+  - PII input → engine redacts; turn continues; guardrails.input=['pii_detector'];
+    needs_review=True                                              (guardrails-001/-002/-006)
   - Clean input → guardrails.{input,output}=[] (no false positives) (guardrails-001/-002)
   - Model reply containing a secret → output guardrail blocks it;
     reply replaced with safe refusal; guardrails.output=['secret_leak'];
     needs_review=True; raw secret absent from reply               (guardrails-001/-002/-010/-013)
-  - Guardrail names emitted by the framework are a superset of the adversarial.yaml
+  - Guardrail names emitted by the engine are a superset of the adversarial.yaml
     must_trip labels (enforces guardrails-017 alignment)
-  - guardrails_enabled=False → plain orchestrator, guardrails empty (guardrails-016)
 
 Uses TestModel (no real LLM call) + aiosqlite (no Postgres required).
 
 req: guardrails-001, guardrails-002, guardrails-006, guardrails-008,
-     guardrails-010, guardrails-013, guardrails-016, guardrails-017
+     guardrails-010, guardrails-013, guardrails-017
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
-from app.agents.orchestrator import get_guarded_orchestrator, get_orchestrator
+from app.agents.orchestrator import get_orchestrator
 from app.agents.session import (
     ConversationSession,  # noqa: F401 — registers table in SQLModel metadata
 )
@@ -54,17 +54,16 @@ _NINE_FIELDS: frozenset[str] = frozenset(
     }
 )
 
-# Gold-label set from adversarial.yaml — framework-emitted guardrail names must align.
-# After migration to pydantic-ai-guardrails:
-#   - "jailbreak" is detected by the prompt_injection guard (same guard, same name)
-#   - "off_topic" is not a separate framework guard (soft-flag behaviour removed)
+# Gold-label set from adversarial.yaml — engine-emitted guardrail names must align.
 # req: guardrails-017
 _MUST_TRIP_LABELS: frozenset[str] = frozenset(
     {
         "prompt_injection",
+        "jailbreak",
         "pii_detector",
         "toxicity",
         "secret_leak",
+        "off_topic",
     }
 )
 
@@ -152,46 +151,39 @@ async def chat_app_setup(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[None
 
 
 class TestChatGuardrailsPaths:
-    async def test_chat_pii_input_blocked(
+    async def test_chat_pii_input_redacted_turn_continues(
         self,
         chat_app_setup: None,
     ) -> None:
-        """PII (email) in input is blocked by the framework; safe refusal returned, no model call.
+        """PII (email) in input is redacted; the agent is still called; contract is correct.
 
-        The pydantic-ai-guardrails pii_detector() guard (action='block') fires and raises
-        InputGuardrailViolation before the orchestrator is called.  The boundary catches
-        the violation and emits a safe-refusal TurnOutput.
-
-        Note: the framework's input PII guard blocks (not redacts) — the model never
-        receives the user's message.  This differs from the prior hand-rolled behavior
-        where PII was redacted then forwarded.
+        The input guardrail fires (pii_detector), redacts the email, and forwards
+        the sanitised text to the orchestrator.  The turn completes normally via TestModel.
 
         Assertions:
-          - HTTP 200 (block path, not a 500)
-          - guardrails.input = ['pii_detector']          req: guardrails-002
-          - needs_review = True                          req: guardrails-006
-          - reply is non-empty safe refusal (NOT model reply)
-          - guardrails.output = [] (no model call → no output guard check)
-          - no model call needed (block fires before orchestrator)
-          - triggered name is in the must_trip set       req: guardrails-017
+          - HTTP 200 (turn not blocked)
+          - guardrails.input = ['pii_detector']        req: guardrails-002
+          - guardrails.output = []                     (TestModel reply has no secrets)
+          - needs_review = True                        req: guardrails-006
+          - reply is non-empty                         (model was called, not short-circuited)
+          - triggered name is in the must_trip set     req: guardrails-017
 
-        req: guardrails-001, guardrails-002, guardrails-006, guardrails-012
+        req: guardrails-001, guardrails-002, guardrails-006
         """
         pii_message = "My email is student@example.com, what philosophy courses does Zapp offer?"
 
-        # Intentionally do NOT override the model — the block must fire before the
-        # orchestrator is called, so no LLM call is needed.
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=True),
-            base_url="http://test",
-        ) as client:
-            response = await client.post(
-                "/chat",
-                json={"session_id": "guardrail-paths-pii-001", "message": pii_message},
-            )
+        with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/chat",
+                    json={"session_id": "guardrail-paths-pii-001", "message": pii_message},
+                )
 
         assert response.status_code == 200, (
-            f"Expected 200 on PII block path, got {response.status_code}: {response.text}"
+            f"Expected 200, got {response.status_code}: {response.text}"
         )
         data = response.json()
         assert set(data.keys()) == _NINE_FIELDS
@@ -202,15 +194,16 @@ class TestChatGuardrailsPaths:
         assert "pii_detector" in turn.guardrails.input, (
             f"Expected 'pii_detector' in guardrails.input; got {turn.guardrails.input!r}"
         )
-        # Turn must be flagged for review.  req: guardrails-006
+        # Turn must be flagged for review because PII was found.  req: guardrails-006
         assert turn.needs_review is True, "PII-detected turn must set needs_review=True"
-        # Reply is a safe refusal (non-empty, not the model's reply).
-        assert turn.reply, "Block path must have a non-empty safe refusal reply"
-        # Input block path: output guards never ran (no model call).
+        # Reply is non-empty — the model was called (not blocked), TestModel replied.
+        assert turn.reply, "Turn must have a non-empty reply (model was called)"
+        # Output guardrails must be clean (TestModel reply has no secrets or toxicity).
         assert turn.guardrails.output == [], (
-            f"Expected empty guardrails.output on input-block path; got {turn.guardrails.output!r}"
+            f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
         )
-        # All triggered input names must match the must_trip labels.  req: guardrails-017
+        # All triggered input names must match the adversarial.yaml must_trip labels.
+        # req: guardrails-017
         for name in turn.guardrails.input:
             assert name in _MUST_TRIP_LABELS, (
                 f"Guardrail name {name!r} not in must_trip label set {_MUST_TRIP_LABELS!r}"
@@ -336,94 +329,34 @@ class TestChatGuardrailsPaths:
 
 class TestGuardrailNameAlignment:
     def test_guardrail_names_match_must_trip_labels(self) -> None:
-        """Framework-emitted contract names are a superset of adversarial.yaml must_trip labels.
+        """Engine-emitted guardrail names are a superset of adversarial.yaml must_trip labels.
 
         The eval adversarial dataset uses must_trip labels to identify which guardrail
         should fire.  For precision/recall to be computable, every must_trip label must
-        equal a framework-emitted contract name.
+        equal an engine-emitted name.  This test enforces that alignment statically.
 
-        After migration to pydantic-ai-guardrails:
-          - "prompt_injection" guard fires for both injection AND jailbreak patterns
-          - "toxicity_detector" input guard → adapter maps to "toxicity"
-          - "pii_detector" input guard → adapter maps to "pii_detector"
-          - "secret_input" guard → adapter maps to "secret_leak"
-          - "toxicity_output" output guard → adapter maps to "toxicity"
-          - "secret_output" output guard → adapter maps to "secret_leak"
-          - "pii_output" output guard → adapter maps to "pii_leak"
-          - "guardrail_error" → fail-safe sentinel (guardrails-019)
+        Note: pii_leak is output-only and intentionally absent from must_trip; the input
+        equivalent is pii_detector.
 
         req: guardrails-017
         """
-        # Contract-vocabulary names the framework+adapter combination can emit.
-        framework_emitted_names: frozenset[str] = frozenset(
+        # Names the engine can emit (from detectors.py + engine.py policy).
+        engine_emitted_names: frozenset[str] = frozenset(
             {
-                "prompt_injection",  # prompt_injection() guard → guardrails-003, -004
-                "toxicity",  # toxicity_detector() + toxicity_output_guard() → -005, -009
-                "pii_detector",  # pii_detector() input guard → guardrails-006
-                "pii_leak",  # pii_output_guard() output guard → guardrails-008
-                "secret_leak",  # secret_input_guard() + secret_output_guard() → -010
-                "guardrail_error",  # fail-safe sentinel → guardrails-019
+                "prompt_injection",  # detect_prompt_injection — guardrails-003
+                "jailbreak",  # detect_jailbreak — guardrails-004
+                "toxicity",  # detect_toxicity (input + output) — guardrails-005, -009
+                "pii_detector",  # detect_pii on input — guardrails-006
+                "off_topic",  # detect_off_topic — guardrails-007
+                "pii_leak",  # detect_pii on output — guardrails-008 (output-only)
+                "secret_leak",  # detect_secret_leak — guardrails-010
+                "guardrail_error",  # _GUARDRAIL_ERROR_MARKER on fail-safe — guardrails-019
             }
         )
 
-        # Every must_trip label must be a name the framework+adapter can emit.
-        missing = _MUST_TRIP_LABELS - framework_emitted_names
+        # Every must_trip label must be a name the engine can emit.
+        missing = _MUST_TRIP_LABELS - engine_emitted_names
         assert not missing, (
-            f"must_trip labels {missing!r} are not in the framework+adapter emitted set — "
+            f"must_trip labels {missing!r} are not emitted by the engine — "
             f"guardrail precision/recall would be broken (guardrails-017)"
-        )
-
-
-# ===========================================================================
-# guardrails_enabled=False → plain orchestrator, empty guardrails (guardrails-016)
-# ===========================================================================
-
-
-class TestGuardrailsDisabled:
-    async def test_chat_guardrails_disabled_skips_all_checks(
-        self,
-        chat_app_setup: None,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """When GUARDRAILS_ENABLED=false the plain orchestrator is used; guardrails empty.
-
-        With guardrails_enabled=False the /chat boundary runs get_orchestrator() directly
-        (no GuardedAgent).  The turn completes normally via TestModel and both
-        guardrails.input and guardrails.output must be empty (no checks were run).
-
-        req: guardrails-016
-        """
-        monkeypatch.setenv("GUARDRAILS_ENABLED", "false")
-        # Rebuild caches after env-var change so the new settings take effect.
-        from app.config import get_settings as _get_settings
-
-        _get_settings.cache_clear()
-        get_guarded_orchestrator.cache_clear()
-
-        with get_orchestrator().override(model=TestModel(custom_output_args=_VALID_TURN_ARGS)):
-            async with AsyncClient(
-                transport=ASGITransport(app=app, raise_app_exceptions=True),
-                base_url="http://test",
-            ) as client:
-                response = await client.post(
-                    "/chat",
-                    json={
-                        "session_id": "guardrails-disabled-001",
-                        "message": "What philosophy courses does Zapp offer?",
-                    },
-                )
-
-        assert response.status_code == 200, (
-            f"Expected 200 with guardrails disabled, got {response.status_code}: {response.text}"
-        )
-        data = response.json()
-        assert set(data.keys()) == _NINE_FIELDS
-
-        turn = TurnOutput.model_validate(data)
-        # Both guardrail lists must be empty — no checks ran.  req: guardrails-016
-        assert turn.guardrails.input == [], (
-            f"Expected empty guardrails.input; got {turn.guardrails.input!r}"
-        )
-        assert turn.guardrails.output == [], (
-            f"Expected empty guardrails.output; got {turn.guardrails.output!r}"
         )

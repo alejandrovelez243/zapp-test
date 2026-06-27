@@ -3,7 +3,7 @@
 ## Summary
 
 Input and output guardrails for the conversational agent — the brief's graded Guardrails criterion.
-Every turn runs framework guardrails (`pydantic-ai-guardrails` `GuardedAgent` + built-in detectors, with an
+Every turn runs deterministic, reproducible guardrails (a hybrid: a rule/pattern-based core, with an
 optional LLM-based layer behind a flag) that detect prompt-injection, jailbreak, PII, toxicity, and
 off-topic input, and PII-leak, toxicity, and secret-leak output. Triggered guardrails populate the
 per-turn contract's `guardrails.{input,output}` names and drive `needs_review`. On-block behavior is
@@ -57,8 +57,8 @@ fusion. The third-party `pydantic-ai-guardrails` package is OPTIONAL (the LLM la
 11. THE SYSTEM SHALL apply the input and output guardrails across ES, EN, and PT.   <!-- eval: guardrails-011 -->
 12. WHEN a guardrail blocks a turn THE SYSTEM SHALL still emit the full nine-field `TurnOutput` with the safe refusal as `reply` (never a 500, never the raw blocked content).   <!-- eval: guardrails-012 -->
 13. THE SYSTEM SHALL NOT include redacted or blocked raw content in `reply`, `final_normalized_text`, or any PostHog payload.   <!-- eval: guardrails-013 -->
-14. THE SYSTEM SHALL implement the guardrails via the `pydantic-ai-guardrails` framework (`GuardedAgent` + built-in detectors), recording each fired guardrail name in the contract.   <!-- eval: guardrails-014 -->
-15. WHERE `guardrails_llm_enabled` is set THE SYSTEM SHALL enable the framework's LLM-judge guard; WHERE unset THE SYSTEM SHALL rely on the built-in pattern detectors only.   <!-- eval: guardrails-015 -->
+14. THE SYSTEM SHALL implement the core guardrails deterministically (pattern/rule-based) so results are reproducible across runs.   <!-- eval: guardrails-014 -->
+15. WHERE `guardrails_llm_enabled` is set THE SYSTEM SHALL augment the deterministic checks with an LLM layer; WHERE unset THE SYSTEM SHALL rely on the deterministic core only.   <!-- eval: guardrails-015 -->
 16. WHERE `guardrails_enabled` is false THE SYSTEM SHALL skip all guardrail checks AND leave `guardrails.{input,output}` empty.   <!-- eval: guardrails-016 -->
 17. THE SYSTEM SHALL use guardrail names that align with the evaluation adversarial dataset `must_trip` labels so guardrail precision/recall is computable.   <!-- eval: guardrails-017 -->
 18. WHEN the guardrails feature is active THE SYSTEM SHALL enable (un-defer) the evaluation suite's guardrail precision/recall thresholds.   <!-- eval: guardrails-018 -->
