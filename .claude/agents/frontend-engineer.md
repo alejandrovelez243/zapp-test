@@ -1,6 +1,6 @@
 ---
 name: frontend-engineer
-description: Use this agent when implementing Next.js App Router UI tasks for the Philosophy School platform on Vercel — the streaming chat surface that renders the per-turn JSON contract, the admin-token-gated document and event management screens, the .ics download flow, PostHog client wiring, and accessibility work. Invoke it for any frontend/ task in tasks.md that produces React/TypeScript, Tailwind, or shadcn/ui code.
+description: Use this agent when implementing Next.js App Router UI tasks for the Philosophy School platform on Vercel — the streaming chat surface that renders the per-turn JSON contract, the admin-token-gated document and event management screens, the .ics download flow, and accessibility work (NO analytics/PostHog in the frontend — analytics is backend-only). Invoke it for any frontend/ task in tasks.md that produces React/TypeScript, Tailwind, or shadcn/ui code.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: sonnet
 ---
@@ -70,11 +70,14 @@ Document and event management lives behind an **admin-token** gate (the default 
 
 After a user enrolls in an event (email collected at enroll time), the backend returns a calendar invite. The UI must offer a clear **.ics download** for the returned file, with event times localized to the user's resolved locale/timezone (driven by `detected_country`). Provide an accessible download control and a fallback link.
 
-## PostHog client + /ingest proxy
+## Analytics — NONE in the frontend
 
-- Initialize PostHog via `instrumentation-client.ts`. Configure a Next.js **`/ingest` reverse-proxy rewrite** so ad-blockers don't drop events; point the PostHog client `api_host` at `/ingest`.
-- **Send METADATA ONLY for student messages** — PostHog does NOT scrub PII by default. Emit the per-turn contract fields that are safe (e.g. `detected_lang`, `active_lang`, `lang_confidence`, `detected_country`, `confidence_score`, `needs_review`, guardrail names, latencies, runtime eval scores). NEVER send `reply`, raw user text, `final_normalized_text`, or email. Content lives in Logfire (backend), not PostHog.
-- Pick the PostHog region (US vs EU) consistently with the backend's Logfire region.
+- The frontend wires **NO** product-analytics SDK. Do NOT add `posthog-js`,
+  `instrumentation-client.ts`, a `/ingest` reverse-proxy rewrite, or any tracking script.
+- All product analytics is **backend-only** (PostHog server-side, metadata-only); student
+  message content + PII stay server-side via Logfire. Enforced by `frontend-shell-022`.
+- Tier-3 toggles come from build-time env flags (e.g. `NEXT_PUBLIC_SHOW_DETAILS`), not a
+  client PostHog SDK.
 
 ## API integration & config
 
