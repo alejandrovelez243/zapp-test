@@ -2,13 +2,13 @@
 
 Design for `faq-rag`. Realizes `specs/faq-rag/requirements.md` (`faq-rag-001..018`). A pgvector
 retrieval-augmented FAQ agent (orchestrator tool) grounded in admin-uploaded documents, embedded with
-**Gemini** via the gateway. Silent grounding; empty/low retrieval → no hallucination + `needs_review`.
+**OpenAI text-embedding-3-small** via the gateway (one token). Silent grounding; empty/low retrieval → no hallucination + `needs_review`.
 
 ## 1. Architecture overview
 
 ```
 ADMIN ──(admin token)──▶ FastAPI /documents (upload/list/delete/update)
-   upload → 202 Accepted → BACKGROUND ingest job: extract → chunk → embed(Gemini) → pgvector rows
+   upload → 202 Accepted → BACKGROUND ingest job: extract → chunk → embed(OpenAI via gateway) → pgvector rows
                                                    (status: pending→ingesting→ready|failed)
 STUDENT ──POST /chat──▶ orchestrator ──tool ask_faq──▶ faq_agent
    faq_agent ──tool retrieve(query)──▶ EmbeddingService.embed(query) → pgvector cosine top-k (status=ready)
@@ -33,9 +33,9 @@ inline** in the upload request. The FAQ agent is an **orchestrator tool** (`deps
   tables + the HNSW index. (faq-rag-005)
 
 ### 2.2 `app/rag/embeddings.py` — `EmbeddingService`
-- `async embed(texts: list[str]) -> list[list[float]]`: calls the configured **Gemini** embedding model
-  (`embedding_model`, dim `embedding_dim`) via the shared gateway (httpx to the gateway embeddings
-  endpoint, or the google-genai client — see Open Decisions), batched + timeout-bounded, inside a
+- `async embed(texts: list[str]) -> list[list[float]]`: wraps `pydantic_ai.Embedder(embedding_model)`
+  (`gateway/openai:text-embedding-3-small`, dim `embedding_dim`=1536) — routed through the SAME gateway
+  token as the chat models (one credential), via `embed_documents` / `embed_query`, inside a
   `logfire.span`. Pure I/O; raises a typed error the callers handle (ingest → mark failed; query →
   degrade). (faq-rag-005, -017)
 
@@ -79,7 +79,7 @@ inline** in the upload request. The FAQ agent is an **orchestrator tool** (`deps
 ### 2.8 `app/deps.py` (edit) + `app/config.py` (edit)
 - `AgentDeps.rag: RagSignal` (a small mutable holder: `max_score: float|None`, `hit_count: int`).
 - Config: `hybrid_retrieval` (flag, default false), `rag_top_k` (5), `rag_similarity_min`,
-  `embedding_model` (Gemini id), `embedding_dim` (768), `chunk_size`, `chunk_overlap`.
+  `embedding_model` (`gateway/openai:text-embedding-3-small`), `embedding_dim` (1536), `chunk_size`, `chunk_overlap`.
 
 ## 3. Sequence diagrams
 
@@ -93,7 +93,7 @@ sequenceDiagram
   participant DB as pgvector
   API->>Orc: run(question)
   Orc->>FAQ: ask_faq tool (deps, usage)
-  FAQ->>Emb: embed(query)  (Gemini, logfire span)
+  FAQ->>Emb: embed(query)  (OpenAI via gateway, logfire span)
   Emb-->>FAQ: query vector
   FAQ->>DB: cosine top-k WHERE status=ready
   DB-->>FAQ: chunks (score ≥ min)
@@ -136,9 +136,9 @@ class DocumentChunk(SQLModel, table=True):
     document_id: int = Field(index=True, foreign_key="document.id")
     ordinal: int
     text: str
-    embedding: list[float] = Field(sa_column=Column(Vector(768)))  # embedding_dim
+    embedding: list[float] = Field(sa_column=Column(Vector(1536)))  # embedding_dim (text-embedding-3-small)
     created_at: datetime
-# HNSW index (cosine) created in migration 0005; embedding_dim fixed by the chosen Gemini model.
+# HNSW index (cosine) created in migration 0005; embedding_dim fixed by the model (text-embedding-3-small @ 1536).
 
 class RagSignal(BaseModel):      # on AgentDeps; written by retrieve_chunks, read by the validator
     max_score: float | None = None
@@ -173,13 +173,14 @@ No `.ics`/event shapes touched. Writes contract fields `reply`, `confidence_scor
 
 - **ADK — rejected** (PydanticAI only). **PageIndex — deferred**: RAG is pgvector-only (HNSW, cosine,
   hybrid-ready) now; PageIndex (structural/recursive index) is a documented upgrade path, not built.
-- **Gemini embeddings via the gateway — chosen** (best quality per the interview). Default model
-  `text-embedding-004` @ **768 dims** (fixed pgvector column). *Routing uncertainty:* call the embeddings
-  endpoint through the gateway base_url if it proxies Google embeddings; otherwise the `google-genai`
-  client with a Google key — **confirm at integration** (the `EmbeddingService` abstraction isolates this).
-  *Revisit:* `gemini-embedding-001` (larger/MRL-truncatable dims) if quality needs it — requires a column
-  dim change + full re-embed. *Rejected:* OpenAI embeddings (user picked Gemini), local
-  sentence-transformers (heavy torch dep + big image).
+- **OpenAI `text-embedding-3-small` via the Pydantic AI Gateway — chosen** (resolved during impl):
+  embeddings go through the SAME `PYDANTIC_AI_GATEWAY_API_KEY` as the chat models (one token), consumed
+  via `pydantic_ai.Embedder`, @ **1536 dims** (fixed pgvector column). *Rejected:* **Gemini**
+  `text-embedding-004` — although picked first ("best quality"), Gemini embeddings need a SEPARATE
+  `GOOGLE_API_KEY` (the gateway token does not cover them), which breaks the one-token / gateway-only
+  goal; not worth the extra credential here. Also rejected: local sentence-transformers (heavy torch
+  dep + big image). *Revisit:* Gemini (`text-embedding-004`/`gemini-embedding-001`) + a `GOOGLE_API_KEY`
+  if embedding quality ever needs it — requires a column dim change + full re-embed.
 - **Pure pgvector cosine top-k; hybrid behind `hybrid_retrieval` — chosen** (simple, enough for FAQ).
   *Rejected:* hybrid-by-default (more to build/tune). HNSW with `vector_cosine_ops`.
 - **Silent grounding (no source citation) — chosen** per the interview. *Rejected:* inline citations
@@ -196,5 +197,5 @@ No `.ics`/event shapes touched. Writes contract fields `reply`, `confidence_scor
 ## Config (single source)
 
 `app/config.py`: `hybrid_retrieval` (flag), `rag_top_k`, `rag_similarity_min`, `embedding_model`
-(Gemini id, gateway), `embedding_dim` (768), `chunk_size`, `chunk_overlap`. Embeddings are gateway-routed;
+(`gateway/openai:text-embedding-3-small`), `embedding_dim` (1536), `chunk_size`, `chunk_overlap`. Embeddings are gateway-routed (one token, via `pydantic_ai.Embedder`);
 the exact embeddings transport is confirmed at integration. Model ids are placeholders per convention.

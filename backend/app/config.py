@@ -142,18 +142,18 @@ class Settings(BaseSettings):
     # req: faq-rag-009, faq-rag-011
     rag_similarity_min: float = 0.25
 
-    # Gemini embedding model id (placeholder — exact transport confirmed at integration:
-    # either the Pydantic AI Gateway embeddings endpoint proxying Google, or the
-    # google-genai client with a Google key; the EmbeddingService abstraction isolates
-    # the transport so callers are unaffected by the routing decision).
+    # Embedding model — OpenAI text-embedding-3-small routed through the SAME Pydantic AI
+    # Gateway as the chat models (one token: PYDANTIC_AI_GATEWAY_API_KEY). Chosen over
+    # Gemini embeddings, which would need a separate GOOGLE_API_KEY (the gateway token does
+    # not cover Gemini embeddings). Consumed via pydantic_ai.Embedder.
     # req: faq-rag-005
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gateway/openai:text-embedding-3-small"
 
-    # Dimensionality of the pgvector embedding column — fixed by the chosen Gemini model
-    # (text-embedding-004 @ 768 dims).  Changing this requires a column-level migration
+    # Dimensionality of the pgvector embedding column — fixed by the chosen model
+    # (text-embedding-3-small @ 1536 dims).  Changing this requires a column-level migration
     # and a full re-embed of all DocumentChunk rows.
     # req: faq-rag-005
-    embedding_dim: int = 768
+    embedding_dim: int = 1536
 
     # Size of each text chunk (in characters) produced by the ingestion splitter.
     # req: faq-rag-005

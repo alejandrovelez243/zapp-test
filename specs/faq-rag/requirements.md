@@ -3,8 +3,9 @@
 ## Summary
 
 A retrieval-augmented FAQ agent that answers student questions grounded in **uploaded course
-documents**. Admins upload documents (PDF / Markdown / TXT) which are chunked, embedded with a
-**Gemini embedding model (via the gateway)**, and stored as **pgvector** vectors (HNSW, cosine).
+documents**. Admins upload documents (PDF / Markdown / TXT) which are chunked, embedded with
+**OpenAI `text-embedding-3-small` via the Pydantic AI Gateway** (the SAME single gateway token — no
+separate key), and stored as **pgvector** vectors (HNSW, cosine).
 At query time the FAQ-RAG agent (an orchestrator tool) retrieves the top-k most similar chunks and
 answers **grounded only in them**, in the session `active_lang`. Grounding is **silent** (no source
 citation in the reply). Empty/low retrieval → no hallucination + `needs_review` + lower
@@ -19,7 +20,7 @@ delete the document corpus, so the FAQ stays current.
 ## In / Out of scope
 
 In scope: admin document lifecycle (upload PDF/MD/TXT → BACKGROUND ingestion → list → delete; update =
-re-ingest + atomic swap); chunking + Gemini embeddings via the gateway → pgvector (HNSW, cosine); the
+re-ingest + atomic swap); chunking + OpenAI `text-embedding-3-small` embeddings via the gateway → pgvector (HNSW, cosine); the
 FAQ-RAG agent run as an orchestrator tool (top-k cosine retrieval → grounded answer in `active_lang`);
 silent grounding (no citation); anti-hallucination on empty/low retrieval; multilingual (docs in any
 language, answer in `active_lang`); admin-token auth for management, anonymous sessions for queries.
@@ -33,7 +34,7 @@ path); a **reranker** (deferred); source **citations** (chosen: silent grounding
 - `hybrid_retrieval` (flag, default **off**): off = pure pgvector cosine top-k; on = combine cosine
   with keyword/BM25 scores before ranking.
 - Config values (resolved in design): `rag_top_k`, `rag_similarity_min` (no-match threshold),
-  `embedding_model` (Gemini id via gateway), `embedding_dim` (fixed pgvector column dimension),
+  `embedding_model` (`gateway/openai:text-embedding-3-small`), `embedding_dim` (1536, fixed pgvector column dimension),
   `chunk_size`/`chunk_overlap`.
 
 ## User Stories
@@ -48,7 +49,7 @@ path); a **reranker** (deferred); source **citations** (chosen: silent grounding
 2. IF a document-management request lacks a valid admin token THEN THE SYSTEM SHALL reject it (401/403) AND not ingest or mutate the corpus.   <!-- eval: faq-rag-002 -->
 3. WHEN a document is uploaded THE SYSTEM SHALL ingest it in a BACKGROUND job (never inline in the request): extract text, chunk it, embed each chunk, and store chunks + vectors.   <!-- eval: faq-rag-003 -->
 4. WHILE a document's ingestion is still running THE SYSTEM SHALL exclude that document's chunks from retrieval.   <!-- eval: faq-rag-004 -->
-5. THE SYSTEM SHALL embed chunks with the configured Gemini embedding model via the gateway and store fixed-dimension vectors in a pgvector column with an HNSW index.   <!-- eval: faq-rag-005 -->
+5. THE SYSTEM SHALL embed chunks with the configured embedding model (OpenAI `text-embedding-3-small`) via the gateway and store fixed-dimension (1536) vectors in a pgvector column with an HNSW index.   <!-- eval: faq-rag-005 -->
 6. WHEN an admin lists documents THE SYSTEM SHALL return each document's id, name, and ingestion status.   <!-- eval: faq-rag-006 -->
 7. WHEN an admin deletes a document THE SYSTEM SHALL remove the document and all its chunks/vectors from retrieval.   <!-- eval: faq-rag-007 -->
 8. WHEN an admin re-uploads/updates a document THE SYSTEM SHALL re-ingest into new rows and atomically swap, then delete the old rows (ingested documents are immutable).   <!-- eval: faq-rag-008 -->
@@ -81,5 +82,5 @@ append-only. Retrieval-quality Cases assert on `reply` grounding + `needs_review
 - Anti-hallucination: never answer beyond the retrieved chunks; empty/low retrieval → honest "no
   information" + `needs_review` + damped `confidence_score`.
 - Data lifecycle: ingestion is a BACKGROUND job (never inline); ingested documents are immutable
-  (update = re-ingest + atomic swap + delete old). Gemini embeddings via the gateway; fixed-dimension
+  (update = re-ingest + atomic swap + delete old). OpenAI `text-embedding-3-small` embeddings via the gateway (one token); fixed-dimension
   pgvector column with an HNSW cosine index. **PageIndex** and a **reranker** are deferred.
