@@ -10,20 +10,12 @@ created in Alembic migration 0005.
 Requirements: faq-rag-005
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlmodel import Column, Field, SQLModel
 
-
-def _now_utc() -> datetime:
-    """Return the current UTC time as a naive datetime (no tzinfo).
-
-    Project convention: timestamps are stored naive-UTC to match the
-    ``TIMESTAMP WITHOUT TIME ZONE`` Postgres columns.  asyncpg rejects
-    timezone-aware datetimes on those columns, so tzinfo is stripped here.
-    """
-    return datetime.now(UTC).replace(tzinfo=None)
+from app.time import now_utc
 
 
 class Document(SQLModel, table=True):
@@ -53,8 +45,8 @@ class Document(SQLModel, table=True):
 
     # Naive-UTC creation and last-update timestamps.
     # req: faq-rag-005
-    created_at: datetime = Field(default_factory=_now_utc)
-    updated_at: datetime = Field(default_factory=_now_utc)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
 
 
 class DocumentChunk(SQLModel, table=True):
@@ -87,4 +79,4 @@ class DocumentChunk(SQLModel, table=True):
     embedding: list[float] = Field(sa_column=Column(Vector(1536)))
 
     # Naive-UTC creation timestamp; asyncpg rejects tz-aware datetimes.
-    created_at: datetime = Field(default_factory=_now_utc)
+    created_at: datetime = Field(default_factory=now_utc)

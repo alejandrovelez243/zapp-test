@@ -1,37 +1,10 @@
 """POST /chat FastAPI boundary — language detection → guardrails → orchestrator → persistence.
 
-Wires the full per-turn pipeline:
-  detect → resolve_active_lang → input guardrails → build AgentDeps → orchestrator.run →
-  output guardrails → persist session + messages → return TurnOutput.
+Full pipeline: detect → resolve_active_lang → input guardrails → AgentDeps → orchestrator.run →
+output guardrails → persist session + messages → return TurnOutput.  Degrades gracefully on
+``ModelHTTPError | UnexpectedModelBehavior | UsageLimitExceeded`` (never returns a 500).
 
-Catches ``ModelHTTPError | UnexpectedModelBehavior | UsageLimitExceeded`` and degrades
-gracefully (never returns a 500 for model errors).
-
-Requirements satisfied:
-  multilingual-001 — emit the full nine-field TurnOutput on every /chat turn
-  multilingual-004 — first-turn active_lang lock persisted via update_language_state
-  multilingual-008 — locked + unsupported → keep active_lang, still persisted
-  multilingual-009 — first-turn unsupported → fallback "en", session persisted
-  guardrails-001 — input guardrails run before the agent; output guardrails run after
-  guardrails-002 — TurnOutput.guardrails populated from triggered guardrail names
-  guardrails-003 — prompt_injection → block (no model call)
-  guardrails-004 — jailbreak → block (no model call)
-  guardrails-005 — toxicity (input) → block (no model call)
-  guardrails-006 — pii_detector → redact + continue; gr_in.text passed to orchestrator
-  guardrails-007 — off_topic → flag; name carried to guardrails.input
-  guardrails-008 — pii_leak in output → redact turn.reply
-  guardrails-009 — toxicity in output → block turn.reply with safe refusal
-  guardrails-010 — secret_leak in output → block turn.reply with safe refusal
-  guardrails-012 — block path emits full nine-field TurnOutput, never a 500
-  guardrails-013 — Logfire span per guardrail check; PostHog event with NAMES ONLY
-
-Observability (Task 10):
-  multilingual-001 / multilingual-005 — one Logfire ``chat_turn`` span wraps the full
-  turn (detect → run) so a grader sees one trace root per conversation turn; an inner
-  ``language.detect`` span isolates the detector call.  After the turn (happy or
-  degraded), a metadata-only PostHog ``turn_completed`` event carries the four contract
-  fields required by the task — NEVER student message content.
-
+req: multilingual-001, -004, -008, -009; guardrails-001 through -010, -012, -013
 Design contract: specs/multilingual/design.md §2.6, specs/guardrails/design.md §2.4
 """
 

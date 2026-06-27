@@ -50,10 +50,10 @@ from app.agents.session import (
     ConversationSession,
     SessionGrade,
     SessionRepository,
-    _now_utc,
 )
 from app.config import get_settings
 from app.observability import get_posthog
+from app.time import now_utc
 
 # evals.* is a sibling package in the backend root (not an installed third-party
 # library).  The ``[[tool.mypy.overrides]]`` entry in pyproject.toml sets
@@ -151,7 +151,7 @@ async def evaluate_conversation(db: AsyncSession, session_id: str) -> None:
             rationale="",
             needs_review=needs_review,
             model=JUDGE_MODEL,
-            created_at=_now_utc(),
+            created_at=now_utc(),
         )
         db.add(grade)
         await db.flush()
@@ -164,7 +164,7 @@ async def evaluate_conversation(db: AsyncSession, session_id: str) -> None:
         result = await db.execute(stmt)
         session_row: ConversationSession | None = result.scalar_one_or_none()
         if session_row is not None:
-            session_row.graded_at = _now_utc()
+            session_row.graded_at = now_utc()
             db.add(session_row)
 
         await db.commit()
@@ -232,7 +232,7 @@ async def idle_sweep_once(db: AsyncSession) -> int:
     if not settings.runtime_eval_enabled:
         return 0
 
-    cutoff = _now_utc() - timedelta(seconds=settings.conversation_idle_timeout)
+    cutoff = now_utc() - timedelta(seconds=settings.conversation_idle_timeout)
 
     stmt = (
         select(ConversationSession)

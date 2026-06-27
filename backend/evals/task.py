@@ -16,7 +16,6 @@ Requirement: evaluation-001
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -32,15 +31,7 @@ from app.fusion.geo import GeoContext, GeoFusionService
 from app.guardrails.engine import GuardrailEngine
 from app.guardrails.refusal import safe_refusal
 from app.lang.pipeline import LanguagePipeline
-
-
-def _now_utc() -> datetime:
-    """Return the current naive-UTC datetime (matches project timestamp convention).
-
-    Strips ``tzinfo`` to match the ``TIMESTAMP WITHOUT TIME ZONE`` columns used by
-    the project — Postgres rejects timezone-aware datetimes for those columns.
-    """
-    return datetime.now(UTC).replace(tzinfo=None)
+from app.time import now_utc
 
 
 async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -100,7 +91,7 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
 
     # Step 2 — Transient ConversationSession (no DB writes; evals never persist state).
     #   created_at / updated_at follow the project's naive-UTC convention.
-    now = _now_utc()
+    now = now_utc()
     session = ConversationSession(
         id=session_id,
         active_lang=prior_active_lang,

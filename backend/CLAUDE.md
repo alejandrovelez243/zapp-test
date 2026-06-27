@@ -95,6 +95,11 @@ PageIndex is a documented upgrade path only.
 scrubs PII by default; sample in prod. Send **metadata-only** student-message events
 to PostHog (it does not scrub PII).
 
+## Docstring style
+
+Module and class docstrings: 2-4 line concise summary + a single `req:`/Design-contract
+reference line.  Never restate behavior the code already shows in multi-paragraph form.
+
 ## Deploy (Railway)
 
 Plain Railway Postgres CANNOT enable pgvector — use the pgvector template/image.

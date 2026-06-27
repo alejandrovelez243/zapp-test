@@ -21,7 +21,6 @@ Design contract: specs/faq-rag/design.md §2.3
 from __future__ import annotations
 
 import io
-from datetime import UTC, datetime
 
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,15 +29,7 @@ from sqlmodel import select
 from app.config import get_settings
 from app.rag.embeddings import EmbeddingService
 from app.rag.models import Document, DocumentChunk
-
-
-def _now_utc() -> datetime:
-    """Return the current naive-UTC datetime.
-
-    Strips tzinfo so asyncpg accepts it on ``TIMESTAMP WITHOUT TIME ZONE`` columns.
-    """
-    return datetime.now(UTC).replace(tzinfo=None)
-
+from app.time import now_utc
 
 # ---------------------------------------------------------------------------
 # Text extraction — req: faq-rag-003
@@ -119,7 +110,7 @@ async def _set_status(
     """Update ``doc.status`` / ``doc.error`` / ``doc.updated_at`` and flush."""
     doc.status = status
     doc.error = error
-    doc.updated_at = _now_utc()
+    doc.updated_at = now_utc()
     await db.flush()
 
 
@@ -145,7 +136,7 @@ async def _insert_chunks(
                 ordinal=ordinal,
                 text=text,
                 embedding=embedding,
-                created_at=_now_utc(),
+                created_at=now_utc(),
             )
         )
     await db.flush()

@@ -1,40 +1,12 @@
 """Orchestrator agent — emits the per-turn ``TurnOutput`` contract in the locked language.
 
-Builds the PydanticAI orchestrator with ``output_type=TurnOutput`` (the canonical nine-field
-per-turn contract), dynamic instructions that inject the session's locked ``active_lang`` and
-the resolved geo context (locale + timezone + current time), and two ``output_validator``s:
-  1. ``_reconcile_language`` — fuses the LLM's ``detected_lang`` with the deterministic
-     lingua detector to set ``lang_confidence`` and language ``needs_review`` triggers.
-  2. ``_reconcile_fusion`` — sets ``detected_country`` from the resolved geo (code-set, NOT
-     LLM-guessed), calls the deterministic ``reconcile`` function to produce
-     ``confidence_score`` and OR ``needs_review``, and ensures ``final_normalized_text`` is
-     never empty.
+Lazy-constructed ``Agent`` with two output validators: ``_reconcile_language`` (LLM-vs-detector
+lang confidence) and ``_reconcile_fusion`` (geo-sourced ``detected_country``, ``confidence_score``,
+``final_normalized_text``).  Resilience and ``UsageLimits`` are applied at the FastAPI boundary.
 
-Agent construction is LAZY: importing this module requires NO provider API key. Only the
-first call to ``get_orchestrator()`` instantiates the ``Agent`` (which triggers provider-key
-resolution in pydantic-ai 2.0). This mirrors ``app/db.py``'s lazy-engine pattern and lets
-the FastAPI app boot, run migrations, and serve ``/health`` without any LLM credential in
-the environment.
-
-Resilience (FallbackModel / timeouts / boundary exception handling) and ``UsageLimits`` are
-applied at the FastAPI boundary (Task 9) — this module is just the agent + validators.
-
-Satisfies:
-  multilingual-001  — emit the full nine-field TurnOutput contract on every turn
-  multilingual-005  — lang_confidence is the LLM-vs-detector agreement score
-  multilingual-006  — reply rendered in active_lang; lang_confidence recomputed
-  multilingual-007  — locked active_lang enforced on the output
-  multilingual-010  — low-confidence → keep active_lang, ask user to confirm, needs_review
-  multilingual-012  — detector failure → low lang_confidence + needs_review
-  orchestrator-and-fusion-001  — detected_country set by code (geo validator), never by LLM
-  orchestrator-and-fusion-005  — final_normalized_text = cleaned text + date resolution
-  orchestrator-and-fusion-006  — relative dates resolved to geo timezone in final_normalized_text
-  orchestrator-and-fusion-008  — confidence_score from deterministic reconcile()
-  orchestrator-and-fusion-013  — final_normalized_text never empty (falls back to reply)
-  orchestrator-and-fusion-014  — lang_fallback_used → needs_review via reconcile
-
-Design contract: specs/multilingual/design.md §2.4
-             + specs/orchestrator-and-fusion/design.md §2.4
+req: multilingual-001, -005, -006, -007, -010, -012
+     orchestrator-and-fusion-001, -005, -006, -008, -013, -014
+Design contract: specs/multilingual/design.md §2.4 + specs/orchestrator-and-fusion/design.md §2.4
 """
 
 from __future__ import annotations

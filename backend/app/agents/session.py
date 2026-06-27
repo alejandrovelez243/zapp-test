@@ -20,24 +20,14 @@ faq-rag-019 adds:
 Requirement: multilingual-007, faq-rag-019
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Field, SQLModel
 
-
-def _now_utc() -> datetime:
-    """Return the current UTC time as a NAIVE datetime (no tzinfo).
-
-    Project convention: timestamps are stored naive-UTC to match the
-    ``TIMESTAMP WITHOUT TIME ZONE`` columns. asyncpg rejects timezone-aware
-    datetimes for those columns ("can't subtract offset-naive and offset-aware"),
-    so we strip the tzinfo here. (SQLite, used in tests, is lenient and did not
-    surface this — Postgres is strict.)
-    """
-    return datetime.now(UTC).replace(tzinfo=None)
+from app.time import now_utc
 
 
 class ConversationSession(SQLModel, table=True):
@@ -89,8 +79,8 @@ class ConversationSession(SQLModel, table=True):
     # Timestamp fields — default_factory keeps mypy-strict happy (no uninitialized
     # non-optional fields) while ensuring the application always supplies a concrete
     # value rather than relying on a server default.
-    created_at: datetime = Field(default_factory=_now_utc)
-    updated_at: datetime = Field(default_factory=_now_utc)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
 
     # req: multilingual-007 — message history for coherence replay
     # Serialised via ModelMessagesTypeAdapter; null until the first turn completes.
@@ -155,7 +145,7 @@ class SessionGrade(SQLModel, table=True):
     model: str
 
     # req: evaluation-016 — naive-UTC creation timestamp; default set at insert time
-    created_at: datetime = Field(default_factory=_now_utc)
+    created_at: datetime = Field(default_factory=now_utc)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +187,7 @@ class SessionRepository:
         if existing is not None:
             return existing
 
-        now = _now_utc()
+        now = now_utc()
         new_session = ConversationSession(
             id=session_id,
             created_at=now,
@@ -228,7 +218,7 @@ class SessionRepository:
         session.last_supported_lang = last_supported_lang
         session.pending_switch_lang = pending_switch_lang
         session.pending_switch_count = pending_switch_count
-        session.updated_at = _now_utc()
+        session.updated_at = now_utc()
         self.db.add(session)
         await self.db.flush()
 

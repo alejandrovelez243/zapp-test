@@ -1,31 +1,10 @@
-"""Guardrail engine — orchestration + per-category policy.
+"""Guardrail engine — input/output policy gate for every ``/chat`` turn.
 
-Provides :class:`GuardrailEngine`, which encapsulates the two boundary methods that
-gate every ``/chat`` turn:
+``GuardrailEngine.run_input`` runs before the model (block/redact/flag);
+``GuardrailEngine.run_output`` runs after (block/redact).  ``GuardrailResult`` is the
+shared data contract.  Injected with compiled ``Detectors`` + ``Settings`` at construction.
 
-* :meth:`~GuardrailEngine.run_input` — runs **before** the model call; may block
-  (security), redact (PII), or soft-flag (off-topic) the incoming user message.
-* :meth:`~GuardrailEngine.run_output` — runs **after** the model call; may block or
-  redact the model reply before it is returned to the caller.
-
-``GuardrailResult`` is the single data contract crossing this boundary.
-
-The engine holds a :class:`~app.guardrails.detectors.Detectors` instance (compiled
-patterns) and a :class:`~app.config.Settings` snapshot as instance state; both are
-injected at construction time.
-
-Requirements:
-  guardrails-003 — prompt_injection → block
-  guardrails-004 — jailbreak       → block
-  guardrails-005 — toxicity (input) → block
-  guardrails-006 — pii_detector    → redact + continue
-  guardrails-007 — off_topic       → flag (soft, never block)
-  guardrails-008 — pii_leak        → redact output
-  guardrails-009 — toxicity (output) → block output
-  guardrails-010 — secret_leak     → block output
-  guardrails-016 — guardrails_enabled kill-switch
-  guardrails-019 — fail-safe: security-critical detector error → block
-
+req: guardrails-003, -004, -005, -006, -007, -008, -009, -010, -016, -019
 Design: specs/guardrails/design.md §2.2 + §4
 """
 
