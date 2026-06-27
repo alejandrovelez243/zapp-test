@@ -20,9 +20,9 @@ ingest/retrieve/agent consumers. Drive task-by-task via `/implement faq-rag`.
 
 - [x] 4. Implement `app/rag/embeddings.py` — `EmbeddingService.embed(texts) -> list[list[float]]` calling the configured Gemini model via the gateway (batched, timeout-bounded, `logfire.span`); raises a typed error callers handle. — _req: faq-rag-005, faq-rag-017 — owner: backend-engineer_
 
-- [ ] 5. Implement `app/rag/ingest.py` — background ingestion: `extract_text` (pypdf for PDF, decode for md/txt) → `chunk` → `EmbeddingService.embed` → insert `DocumentChunk` rows; set `Document.status` pending→ingesting→ready; on failure → `status="failed"` + `error`, corpus stays usable; `reingest_and_swap` (re-ingest new rows + atomic swap + delete old). — _req: faq-rag-003, faq-rag-004, faq-rag-008, faq-rag-018 — owner: backend-engineer_
+- [x] 5. Implement `app/rag/ingest.py` — background ingestion: `extract_text` (pypdf for PDF, decode for md/txt) → `chunk` → `EmbeddingService.embed` → insert `DocumentChunk` rows; set `Document.status` pending→ingesting→ready; on failure → `status="failed"` + `error`, corpus stays usable; `reingest_and_swap` (re-ingest new rows + atomic swap + delete old). — _req: faq-rag-003, faq-rag-004, faq-rag-008, faq-rag-018 — owner: backend-engineer_
 
-- [ ] 6. Implement `app/rag/retrieve.py` — `retrieve(db, query, *, k, similarity_min) -> list[Hit]`: embed query → pgvector cosine top-k `ORDER BY embedding <=> :qvec` filtered to `status=="ready"`; drop hits below `similarity_min`. — _req: faq-rag-009, faq-rag-004 — owner: backend-engineer_
+- [x] 6. Implement `app/rag/retrieve.py` — `retrieve(db, query, *, k, similarity_min) -> list[Hit]`: embed query → pgvector cosine top-k `ORDER BY embedding <=> :qvec` filtered to `status=="ready"`; drop hits below `similarity_min`. — _req: faq-rag-009, faq-rag-004 — owner: backend-engineer_
 
 - [ ] 7. Implement `app/agents/faq.py` — `faq_agent` (worker model, instructions: answer ONLY from retrieved chunks, in `active_lang`, never cite; say "no info" when none) + `@faq_agent.tool retrieve_chunks` (calls retrieve, records top score + hit count on `ctx.deps.rag`, returns chunk texts / empty on no-hit). — _req: faq-rag-010, faq-rag-011, faq-rag-012, faq-rag-013 — owner: backend-engineer_
 
