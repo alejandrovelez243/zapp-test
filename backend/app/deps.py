@@ -35,17 +35,25 @@ class RagSignal(BaseModel):
     ``max_score`` is the cosine similarity of the top-ranked hit (highest first), or
     ``None`` when the retrieval is empty.
 
-    The orchestrator's ``_reconcile_fusion`` output_validator reads this object after
+    ``populated`` is set to ``True`` by the orchestrator's ``ask_faq`` tool after the
+    FAQ-RAG agent returns.  It distinguishes "FAQ tool was called this turn but found
+    no hits" (populated=True, hit_count=0) from "FAQ tool was never called" (populated
+    stays False).  The ``_reconcile_rag`` output_validator skips dampening when
+    populated=False so general-knowledge turns are not penalised.
+
+    The orchestrator's ``_reconcile_rag`` output_validator reads this object after
     the ``ask_faq`` tool returns and uses it to damp ``confidence_score`` and set
     ``needs_review=True`` when retrieval is empty or weak.
 
-    req: faq-rag-011 (producer: retrieve_chunks; consumer: orchestrator validator)
+    req: faq-rag-011 (producer: retrieve_chunks + ask_faq; consumer: orchestrator validator)
          faq-rag-015 (confidence dampening path)
     Design contract: specs/faq-rag/design.md §2.8
     """
 
     max_score: float | None = None
     hit_count: int = 0
+    # True once ask_faq returns (success or empty); distinguishes "not called" from "empty hit".
+    populated: bool = False
 
 
 def _default_detection() -> DetectionResult:

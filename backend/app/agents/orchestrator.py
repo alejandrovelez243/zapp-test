@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 
+from app.agents.faq import get_faq_agent  # lazy factory — key-free on import
 from app.config import LANG_DISPLAY_NAMES, get_settings  # single source for display names
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
@@ -78,21 +79,23 @@ catalog. Supported session languages are Spanish (es), English (en), and Portugu
 it may be offered or switched when the user consistently writes in a different supported
 language (the system handles switching automatically — see dynamic instructions below).
 Do not mix languages within a single reply. Unsupported languages degrade gracefully to
-the configured fallback (English). Dedicated FAQ-RAG and Events tools are planned for a
-later release and do NOT exist yet — answer from general knowledge and be transparent
-when you are uncertain about specific details.
+the configured fallback (English). Use the ``ask_faq`` tool for specific questions about
+course content, faculty, pricing, events, or anything covered in the school's documents.
 
 ## Capabilities & Tool Guidance
-No tools are available in this release. Do NOT claim to call any external tool, search
-a database, or retrieve documents. For questions about specific course details, faculty,
-prices, or upcoming events where you have limited knowledge, acknowledge uncertainty
-and offer to help once richer information becomes available.
+Use the ``ask_faq`` tool to answer questions about the school's courses, documents, and
+FAQ. ALWAYS call it when the user asks about course content, curricula, schedules,
+faculty, prices, or any topic the school's documents may cover. NEVER invent facts: if
+``ask_faq`` returns no information, say you do not have that information in the session
+language. For clearly off-topic questions (greetings, general conversation), you may
+reply without calling the tool.
 
 ## Operating Instructions
 1. Determine the user's intent from their message in the context of the conversation.
-2. Compose a helpful, honest response using general knowledge about the school. If you
-   are uncertain about a specific course title, price, date, or faculty member, say so
-   clearly — do not invent details.
+2. For questions about the school's courses, documents, or FAQ, call the ``ask_faq``
+   tool and ground your answer ONLY in what it returns. NEVER add details beyond what
+   the tool provides. If the tool returns no information, say so honestly in the session
+   language. For clearly off-topic questions reply without calling the tool.
 3. Write `reply` in the session language (see dynamic instructions below).
 4. Set `detected_lang` to the ISO 639-1 code of the language the user wrote in THIS
    turn — this may differ from the session language if the user switches mid-session.
@@ -119,7 +122,9 @@ and offer to help once richer information becomes available.
 
 ## Guardrails
 - NEVER fabricate course names, faculty members, prices, enrollment dates, or event
-  details you do not know with confidence.
+  details — always rely on what the ``ask_faq`` tool returns; if it returns nothing,
+  say you do not have that information.
+- NEVER invent information not returned by the ``ask_faq`` tool.
 - NEVER answer questions unrelated to the Zapp Global Philosophy School (general
   trivia, other institutions, off-domain subjects).
 - NEVER claim to have enrolled a user or registered them for an event — enrollment
@@ -391,6 +396,93 @@ async def _reconcile_fusion(ctx: RunContext[AgentDeps], output: TurnOutput) -> T
 
 
 # ---------------------------------------------------------------------------
+# ask_faq tool — agent-as-tool delegation to the FAQ-RAG agent
+# ---------------------------------------------------------------------------
+
+
+async def ask_faq(ctx: RunContext[AgentDeps], question: str) -> str:
+    """Delegate a student question to the grounded FAQ-RAG agent.
+
+    Forwards ``deps`` (shared DB session, HTTP client, ``rag`` signal) and
+    ``usage`` (so token cost aggregates into the orchestrator's ``RunUsage``
+    and stays within the existing ``UsageLimits``).  On success, marks
+    ``ctx.deps.rag.populated = True`` so ``_reconcile_rag`` knows the FAQ
+    path was exercised this turn.
+
+    On any exception from the FAQ agent (gateway errors, connection errors,
+    unexpected model behaviour), the tool degrades gracefully by returning a
+    safe fallback string and leaving ``rag.populated`` False so the validator
+    does not damp confidence for non-FAQ turns.
+
+    req: faq-rag-014 — deps+usage forwarded; capped by existing UsageLimits
+    Design contract: specs/faq-rag/design.md §2.6
+    """
+    try:
+        r = await get_faq_agent().run(question, deps=ctx.deps, usage=ctx.usage)
+    except Exception:
+        # Degrade: never raise from a tool so TestModel can still complete the turn.
+        # rag.populated stays False → _reconcile_rag skips dampening.
+        return "FAQ service is temporarily unavailable."
+    # Mark that the FAQ path was executed; _reconcile_rag reads this flag.
+    # req: faq-rag-011 (populated flag distinguishes empty-hit from not-called)
+    ctx.deps.rag.populated = True
+    return r.output
+
+
+# ---------------------------------------------------------------------------
+# _reconcile_rag — third output_validator: RAG signal → confidence dampening
+# ---------------------------------------------------------------------------
+
+
+async def _reconcile_rag(ctx: RunContext[AgentDeps], output: TurnOutput) -> TurnOutput:
+    """Damp confidence_score and set needs_review when FAQ retrieval is empty or weak.
+
+    Runs AFTER ``_reconcile_language`` and ``_reconcile_fusion`` (registration
+    order).  Guards streaming partials first per pydantic-ai-conventions §4.
+
+    Logic:
+      1. Guard partials — never validate a half-built streaming output.
+      2. If ``deps.rag.populated`` is False (ask_faq was never called this turn),
+         do nothing — this is a general-knowledge turn.
+      3. If ``hit_count == 0`` (empty retrieval) OR ``max_score`` is below the
+         configured similarity threshold, cap ``confidence_score`` at 0.3 (the
+         same "low signal" value used by the language detector fallback) and set
+         ``needs_review = True``.  This prevents hallucinations from being
+         silently delivered with high confidence.
+
+    req: faq-rag-011 (empty-retrieval → needs_review via validator)
+         faq-rag-015 (RagSignal → confidence dampening)
+    Design contract: specs/faq-rag/design.md §2.6
+    """
+    # MANDATORY guard — output validators also run on streaming partials.
+    # pydantic-ai-conventions §4: guard before any cross-field logic.
+    if ctx.partial_output:
+        return output
+
+    rag = ctx.deps.rag
+
+    # If ask_faq was never called this turn, there is no retrieval signal to act on.
+    # Do nothing so general-knowledge and greeting turns are not penalised.
+    if not rag.populated:
+        return output
+
+    settings = get_settings()
+
+    # Empty retrieval (zero qualifying hits) OR weak top hit (below threshold):
+    # lower confidence and flag for human review.
+    # req: faq-rag-011 (empty path), faq-rag-015 (score below threshold)
+    low_retrieval = rag.hit_count == 0 or (
+        rag.max_score is not None and rag.max_score < settings.rag_similarity_min
+    )
+    if low_retrieval:
+        # Cap at 0.3 — the same "low-signal" baseline used by the language detector.
+        output.confidence_score = min(output.confidence_score, 0.3)
+        output.needs_review = True
+
+    return output
+
+
+# ---------------------------------------------------------------------------
 # Degradation helper — used by the FastAPI /chat boundary on model errors
 # ---------------------------------------------------------------------------
 
@@ -470,8 +562,15 @@ def get_orchestrator() -> Agent[AgentDeps, TurnOutput]:
     #   2. _reconcile_fusion — reads lang_confidence/active_lang; sets detected_country,
     #      confidence_score, needs_review (OR), final_normalized_text fallback
     #      req: orchestrator-and-fusion-001, -005, -008, -013, -014
+    #   3. _reconcile_rag — reads deps.rag; damps confidence_score + sets needs_review
+    #      when FAQ retrieval is empty or weak (skip when ask_faq was not called)
+    #      req: faq-rag-011, faq-rag-015
     agent.instructions(_with_active_language)
     agent.instructions(_with_geo_context)
+    # Register the ask_faq tool so the model can delegate FAQ questions.
+    # req: faq-rag-014 (deps+usage forwarded inside the function body)
+    agent.tool(ask_faq)
     agent.output_validator(_reconcile_language)
     agent.output_validator(_reconcile_fusion)
+    agent.output_validator(_reconcile_rag)
     return agent
