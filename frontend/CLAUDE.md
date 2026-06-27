@@ -35,15 +35,20 @@ mirror `active_lang` from the per-turn contract in the UI.
   (Route Handlers / Server Actions), never in `NEXT_PUBLIC_*`.
 - Vercel **Root Directory = `frontend/`**.
 
-## Analytics (PostHog)
+## Analytics — NONE in the frontend (PostHog is backend-only)
 
-- Wire PostHog via **`instrumentation-client.ts`** and a **`/ingest` reverse-proxy
-  rewrite** so ad-blockers don't drop events.
-- PostHog does **not** scrub PII by default — send **metadata-only** for student
-  messages (no raw message content); content tracing lives in Logfire on the backend.
-- Pick the **same region (US vs EU)** as the backend's Logfire/PostHog setup.
-- PostHog feature flags drive the Tier-3 risky-feature toggles and dashboards over the
-  per-turn contract fields + runtime eval scores.
+- **The frontend wires NO product-analytics SDK.** Do NOT add `posthog-js`,
+  `instrumentation-client.ts`, a `/ingest` reverse-proxy rewrite, or any tracking
+  script. There is no client-side PostHog.
+- **All product analytics lives on the backend.** PostHog is initialized and sent
+  server-side only; student message content and PII never leave the server (content
+  tracing is Logfire on the backend). This keeps the client free of any SDK that could
+  leak message content or PII.
+- Tier-3 risky-feature toggles are driven by **backend config / env flags** (e.g.
+  `NEXT_PUBLIC_SHOW_DETAILS` for the build-time debug disclosure), not a client PostHog
+  feature-flag SDK.
+- Enforced by `specs/frontend-shell` (criterion `frontend-shell-022` + a component
+  test asserting no analytics is initialized from the frontend).
 
 ## Visual character
 
