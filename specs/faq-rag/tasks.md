@@ -16,9 +16,9 @@ ingest/retrieve/agent consumers. Drive task-by-task via `/implement faq-rag`.
 
 - [x] 2. Add FAQ-RAG config to `app/config.py` `Settings`: `hybrid_retrieval: bool = False`, `rag_top_k: int = 5`, `rag_similarity_min: float`, `embedding_model` (Gemini id), `embedding_dim: int = 768`, `chunk_size`, `chunk_overlap`. — _req: faq-rag-005, faq-rag-009, faq-rag-016 — owner: backend-engineer_
 
-- [ ] 3. Implement `app/rag/models.py` — `Document` (id/name/content_type/status/error/timestamps) + `DocumentChunk` (document_id FK, ordinal, text, `embedding: Vector(embedding_dim)`); Alembic migration `0005` creating both tables + an HNSW index on `embedding` with `vector_cosine_ops` (naive-UTC timestamps). — _req: faq-rag-005 — owner: backend-engineer_
+- [x] 3. Implement `app/rag/models.py` — `Document` (id/name/content_type/status/error/timestamps) + `DocumentChunk` (document_id FK, ordinal, text, `embedding: Vector(embedding_dim)`); Alembic migration `0005` creating both tables + an HNSW index on `embedding` with `vector_cosine_ops` (naive-UTC timestamps). — _req: faq-rag-005 — owner: backend-engineer_
 
-- [ ] 4. Implement `app/rag/embeddings.py` — `EmbeddingService.embed(texts) -> list[list[float]]` calling the configured Gemini model via the gateway (batched, timeout-bounded, `logfire.span`); raises a typed error callers handle. — _req: faq-rag-005, faq-rag-017 — owner: backend-engineer_
+- [x] 4. Implement `app/rag/embeddings.py` — `EmbeddingService.embed(texts) -> list[list[float]]` calling the configured Gemini model via the gateway (batched, timeout-bounded, `logfire.span`); raises a typed error callers handle. — _req: faq-rag-005, faq-rag-017 — owner: backend-engineer_
 
 - [ ] 5. Implement `app/rag/ingest.py` — background ingestion: `extract_text` (pypdf for PDF, decode for md/txt) → `chunk` → `EmbeddingService.embed` → insert `DocumentChunk` rows; set `Document.status` pending→ingesting→ready; on failure → `status="failed"` + `error`, corpus stays usable; `reingest_and_swap` (re-ingest new rows + atomic swap + delete old). — _req: faq-rag-003, faq-rag-004, faq-rag-008, faq-rag-018 — owner: backend-engineer_
 
