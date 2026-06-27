@@ -14,7 +14,7 @@ ingest/retrieve/agent consumers. Drive task-by-task via `/implement faq-rag`.
 
 - [x] 1. Add dependencies via `uv add`: `pgvector`, `pypdf` (PDF extraction), and the Gemini embeddings client (`google-genai`) — do NOT hand-edit `pyproject.toml`/`uv.lock`. — _req: faq-rag-005 — owner: devops-engineer_
 
-- [ ] 2. Add FAQ-RAG config to `app/config.py` `Settings`: `hybrid_retrieval: bool = False`, `rag_top_k: int = 5`, `rag_similarity_min: float`, `embedding_model` (Gemini id), `embedding_dim: int = 768`, `chunk_size`, `chunk_overlap`. — _req: faq-rag-005, faq-rag-009, faq-rag-016 — owner: backend-engineer_
+- [x] 2. Add FAQ-RAG config to `app/config.py` `Settings`: `hybrid_retrieval: bool = False`, `rag_top_k: int = 5`, `rag_similarity_min: float`, `embedding_model` (Gemini id), `embedding_dim: int = 768`, `chunk_size`, `chunk_overlap`. — _req: faq-rag-005, faq-rag-009, faq-rag-016 — owner: backend-engineer_
 
 - [ ] 3. Implement `app/rag/models.py` — `Document` (id/name/content_type/status/error/timestamps) + `DocumentChunk` (document_id FK, ordinal, text, `embedding: Vector(embedding_dim)`); Alembic migration `0005` creating both tables + an HNSW index on `embedding` with `vector_cosine_ops` (naive-UTC timestamps). — _req: faq-rag-005 — owner: backend-engineer_
 

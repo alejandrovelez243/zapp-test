@@ -121,6 +121,49 @@ class Settings(BaseSettings):
     # Timezone applied when REST Countries enrichment is skipped or fails.
     default_timezone: str = "UTC"
 
+    # --- FAQ-RAG (req: faq-rag-005, faq-rag-009, faq-rag-016) ---
+    # Tier-3 flag: when False (default) retrieval uses cosine-only (pgvector HNSW);
+    # when True, also adds a keyword score (Postgres ILIKE / ts_rank) before ranking.
+    # req: faq-rag-016
+    hybrid_retrieval: bool = False
+
+    # Maximum number of chunks returned by the cosine retrieval query.
+    # req: faq-rag-009
+    rag_top_k: int = 5
+
+    # Minimum cosine SIMILARITY a chunk must reach to count as a retrieval hit.
+    # Convention: pgvector's ``<=>`` operator returns cosine DISTANCE (0 = identical,
+    # 2 = opposite); similarity = 1 - distance.  A hit therefore requires:
+    #   distance ≤ 1 - rag_similarity_min
+    # i.e. with the default 0.25 a chunk must score at least 0.25 similarity
+    # (≤ 0.75 distance) to be included.  Chunks below this threshold are dropped;
+    # when every chunk is dropped the retrieval is treated as empty and the agent
+    # reports "no information" (anti-hallucination path).
+    # req: faq-rag-009, faq-rag-011
+    rag_similarity_min: float = 0.25
+
+    # Gemini embedding model id (placeholder — exact transport confirmed at integration:
+    # either the Pydantic AI Gateway embeddings endpoint proxying Google, or the
+    # google-genai client with a Google key; the EmbeddingService abstraction isolates
+    # the transport so callers are unaffected by the routing decision).
+    # req: faq-rag-005
+    embedding_model: str = "text-embedding-004"
+
+    # Dimensionality of the pgvector embedding column — fixed by the chosen Gemini model
+    # (text-embedding-004 @ 768 dims).  Changing this requires a column-level migration
+    # and a full re-embed of all DocumentChunk rows.
+    # req: faq-rag-005
+    embedding_dim: int = 768
+
+    # Size of each text chunk (in characters) produced by the ingestion splitter.
+    # req: faq-rag-005
+    chunk_size: int = 1000
+
+    # Overlap between consecutive chunks (in characters) to preserve sentence context
+    # across chunk boundaries.
+    # req: faq-rag-005
+    chunk_overlap: int = 150
+
 
 @lru_cache
 def get_settings() -> Settings:
