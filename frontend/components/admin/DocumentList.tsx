@@ -128,47 +128,23 @@ export function DocumentList({
 
   // ── Aria-live announcement (req 020) ────────────────────────────────────────
   //
-  // A separate sr-only live region announces loading transitions to screen
-  // readers. We track the previous loading state with a ref so we can detect
-  // when isLoading transitions from true → false and compose the right sentence.
+  // The announcement is DERIVED directly from the current render props —
+  // no useState/useEffect needed.  A role="status" aria-live="polite" region
+  // whose text content changes on re-render is announced by screen readers
+  // without any explicit setState side-effect, avoiding the
+  // react-hooks/set-state-in-effect lint rule and cascading-render risk.
   //
   // We do NOT use the Toaster for these list-state changes — they are not user-
   // triggered outcomes (success/error) but ambient status — so a dedicated quiet
   // region avoids spamming the toast queue.
 
-  const [announcement, setAnnouncement] = React.useState<string>("")
-  const prevLoadingRef = React.useRef<boolean>(isLoading)
-  const prevDocCountRef = React.useRef<number>(docs.length)
-
-  React.useEffect(() => {
-    const wasLoading = prevLoadingRef.current
-    const prevCount = prevDocCountRef.current
-    prevLoadingRef.current = isLoading
-    prevDocCountRef.current = docs.length
-
-    if (wasLoading && !isLoading) {
-      // A load (initial or manual refresh) just completed.
-      if (listError) {
-        setAnnouncement("Failed to load documents. See the error message.")
-      } else if (docs.length === 0) {
-        setAnnouncement("Document list loaded. No documents yet.")
-      } else {
-        const n = docs.length
-        setAnnouncement(
-          `Document list refreshed. ${n} document${n === 1 ? "" : "s"}.`
-        )
-      }
-    } else if (!isLoading && docs.length !== prevCount) {
-      // List changed without a loading cycle (unlikely with current hook but
-      // defensive — e.g. an optimistic update path in the future).
-      const n = docs.length
-      if (n > 0) {
-        setAnnouncement(
-          `Document list updated. ${n} document${n === 1 ? "" : "s"}.`
-        )
-      }
-    }
-  }, [isLoading, listError, docs.length])
+  const announcement: string = isLoading
+    ? "Loading documents…"
+    : listError
+      ? "Failed to load documents. See the error message."
+      : docs.length === 0
+        ? "Document list loaded. No documents yet."
+        : `Document list refreshed. ${docs.length} document${docs.length === 1 ? "" : "s"}.`
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -356,8 +332,10 @@ export function DocumentList({
        * status, which is appropriate for these background updates.
        *
        * aria-atomic="true" forces the full sentence to be re-read on each
-       * change rather than diffing partial text. The announcement string is set
-       * by the useEffect above when isLoading flips from true → false.
+       * change rather than diffing partial text. The `announcement` string is
+       * derived directly from render props (isLoading / listError / docs.length)
+       * so it updates whenever those props change — no setState or useEffect
+       * needed; the DOM text change itself triggers the screen-reader announcement.
        *
        * This region is separate from the Toaster (aria-live="polite" role="log")
        * so user-triggered toast events and background status updates do not

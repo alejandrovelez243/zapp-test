@@ -170,7 +170,6 @@ export function DeleteConfirm({
             variant="outline"
             onClick={onCancel}
             // autoFocus: focus starts here when dialog opens (safer default)
-            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             className={cn(
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"

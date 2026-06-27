@@ -26,7 +26,6 @@
  */
 
 import * as React from "react"
-import Link from "next/link"
 import { TokenGate } from "@/components/admin/TokenGate"
 import { UploadDropzone } from "@/components/admin/UploadDropzone"
 import { DocumentList } from "@/components/admin/DocumentList"
