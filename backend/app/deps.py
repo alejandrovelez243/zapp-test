@@ -17,11 +17,35 @@ Requirements:
 from dataclasses import dataclass, field
 
 import httpx
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.fusion.geo import GeoContext
 from app.lang.detector import DetectionResult
 from app.lang.state import ActiveLangDecision
+
+
+class RagSignal(BaseModel):
+    """Retrieval signal written by ``retrieve_chunks``, read by the orchestrator validator.
+
+    ``hit_count`` is the total number of qualifying cosine hits (chunks whose
+    similarity reaches ``rag_similarity_min``).  Zero on an empty retrieval — the
+    anti-hallucination path.
+
+    ``max_score`` is the cosine similarity of the top-ranked hit (highest first), or
+    ``None`` when the retrieval is empty.
+
+    The orchestrator's ``_reconcile_fusion`` output_validator reads this object after
+    the ``ask_faq`` tool returns and uses it to damp ``confidence_score`` and set
+    ``needs_review=True`` when retrieval is empty or weak.
+
+    req: faq-rag-011 (producer: retrieve_chunks; consumer: orchestrator validator)
+         faq-rag-015 (confidence dampening path)
+    Design contract: specs/faq-rag/design.md §2.8
+    """
+
+    max_score: float | None = None
+    hit_count: int = 0
 
 
 def _default_detection() -> DetectionResult:
@@ -61,3 +85,8 @@ class AgentDeps:
     # Defaulted so existing AgentDeps() construction sites keep working without
     # passing geo; the /chat boundary (Task 6) sets the real GeoContext.
     geo: GeoContext = field(default_factory=GeoContext)
+    # req: faq-rag-011 — mutable retrieval signal written by faq_agent.retrieve_chunks
+    # and read by the orchestrator output_validator to damp confidence_score / set
+    # needs_review.  Defaulted so existing AgentDeps() construction sites keep working
+    # without passing rag; the faq agent's retrieve_chunks tool populates it at runtime.
+    rag: RagSignal = field(default_factory=RagSignal)

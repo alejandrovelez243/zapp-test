@@ -295,3 +295,210 @@ class TestStatusFilter:
         await retrieve(db, "What is Stoicism?", embedder, k=5, similarity_min=0.0)
 
         embedder.embed_query.assert_awaited_once_with("What is Stoicism?")
+
+
+# ---------------------------------------------------------------------------
+# TestHybridRetrieval
+# ---------------------------------------------------------------------------
+
+# Named tuple for hybrid result rows: score is pre-computed (not raw distance).
+_HybridRow = namedtuple("_HybridRow", ["text", "document_id", "score"])
+
+
+class TestHybridRetrieval:
+    """hybrid=True fuses cosine with ts_rank before ranking; hybrid=False is unchanged.
+
+    Mocking strategy: ``db.execute`` is intercepted to (a) capture the generated
+    SQL statement for structural assertions and (b) return pre-baked ``_HybridRow``
+    namedtuples whose ``score`` field mirrors the combined score the real query
+    would return.
+
+    req: faq-rag-016 — hybrid_retrieval flag
+    Design contract: specs/faq-rag/design.md §2.4
+    """
+
+    # -- SQL-structure tests ------------------------------------------------
+
+    async def test_hybrid_true_query_contains_ts_rank(self) -> None:
+        """When hybrid=True the generated SQL statement contains the ts_rank function.
+
+        The hybrid SELECT orders by ``0.7 * cosine_sim + 0.3 * ts_rank(...)``.
+        ``str(stmt)`` renders parameters as positional placeholders so the vector
+        is NOT serialised; only the function name ``ts_rank`` is checked.
+
+        req: faq-rag-016
+        """
+        captured: list[Any] = []
+
+        async def _fake_execute(stmt: Any) -> MagicMock:
+            captured.append(stmt)
+            mock_result: MagicMock = MagicMock()
+            mock_result.all.return_value = []
+            return mock_result
+
+        mock_db: AsyncMock = AsyncMock(spec=AsyncSession)
+        mock_db.execute.side_effect = _fake_execute
+
+        await retrieve(
+            mock_db, "what is virtue?", _make_embedder(), k=3, similarity_min=0.0, hybrid=True
+        )
+
+        assert captured, "db.execute() was not called"
+        stmt_str = str(captured[0])
+        assert "ts_rank" in stmt_str, f"Expected 'ts_rank' in hybrid query SQL, got:\n{stmt_str}"
+
+    async def test_hybrid_false_query_does_not_contain_ts_rank(self) -> None:
+        """When hybrid=False the generated SQL does NOT use ts_rank (pure cosine).
+
+        req: faq-rag-016 — default-off path must be pure cosine.
+        """
+        captured: list[Any] = []
+
+        async def _fake_execute(stmt: Any) -> MagicMock:
+            captured.append(stmt)
+            mock_result: MagicMock = MagicMock()
+            mock_result.all.return_value = []
+            return mock_result
+
+        mock_db: AsyncMock = AsyncMock(spec=AsyncSession)
+        mock_db.execute.side_effect = _fake_execute
+
+        await retrieve(
+            mock_db, "what is virtue?", _make_embedder(), k=3, similarity_min=0.0, hybrid=False
+        )
+
+        assert captured, "db.execute() was not called"
+        stmt_str = str(captured[0])
+        assert "ts_rank" not in stmt_str, (
+            f"'ts_rank' must NOT appear in the pure-cosine query, got:\n{stmt_str}"
+        )
+
+    async def test_hybrid_stmt_status_ready_in_where_clause(self) -> None:
+        """The hybrid query also filters Document.status == 'ready'.
+
+        Both paths must apply the status filter (req: faq-rag-004).
+        """
+        captured: list[Any] = []
+
+        async def _fake_execute(stmt: Any) -> MagicMock:
+            captured.append(stmt)
+            mock_result: MagicMock = MagicMock()
+            mock_result.all.return_value = []
+            return mock_result
+
+        mock_db: AsyncMock = AsyncMock(spec=AsyncSession)
+        mock_db.execute.side_effect = _fake_execute
+
+        await retrieve(
+            mock_db, "philosophy", _make_embedder(), k=3, similarity_min=0.0, hybrid=True
+        )
+
+        assert captured, "db.execute() was not called"
+        where_clause = captured[0].whereclause
+        assert where_clause is not None, "No WHERE clause on hybrid statement"
+        # Compile only the WHERE clause (no vector parameter) with literal_binds
+        # so 'ready' is rendered as a SQL literal.
+        where_str = str(where_clause.compile(compile_kwargs={"literal_binds": True}))
+        assert "ready" in where_str, f"'ready' not in WHERE clause: {where_str!r}"
+
+    # -- Behavioural tests --------------------------------------------------
+
+    async def test_hybrid_true_returns_hits_using_combined_score(self) -> None:
+        """Hits are built from the pre-computed combined score column, not 1-distance.
+
+        The hybrid SQL returns rows with a ``score`` field (the combined weighted
+        sum).  retrieve() must use ``r.score`` directly, not apply ``1 - distance``.
+
+        req: faq-rag-016
+        """
+        rows = [
+            _HybridRow(text="chunk A", document_id=1, score=0.88),
+            _HybridRow(text="chunk B", document_id=2, score=0.72),
+        ]
+        hits = await retrieve(
+            _make_db(rows), "ethics", _make_embedder(), k=5, similarity_min=0.0, hybrid=True
+        )
+
+        assert len(hits) == 2
+        assert hits[0].text == "chunk A"
+        assert hits[0].score == pytest.approx(0.88)
+        assert hits[0].document_id == 1
+        assert hits[1].text == "chunk B"
+        assert hits[1].score == pytest.approx(0.72)
+
+    async def test_hybrid_true_drops_hits_below_threshold(self) -> None:
+        """Combined scores below similarity_min are excluded in hybrid mode.
+
+        req: faq-rag-016, faq-rag-011 (anti-hallucination threshold)
+        """
+        rows = [
+            _HybridRow(text="good chunk", document_id=1, score=0.65),  # kept
+            _HybridRow(text="weak chunk", document_id=2, score=0.20),  # dropped
+        ]
+        hits = await retrieve(
+            _make_db(rows), "virtue", _make_embedder(), k=5, similarity_min=0.25, hybrid=True
+        )
+
+        assert len(hits) == 1
+        assert hits[0].text == "good chunk"
+
+    async def test_hybrid_true_all_below_threshold_returns_empty(self) -> None:
+        """All combined scores below threshold → [] (anti-hallucination path).
+
+        req: faq-rag-016, faq-rag-011
+        """
+        rows = [
+            _HybridRow(text="bad1", document_id=1, score=0.10),
+            _HybridRow(text="bad2", document_id=2, score=0.05),
+        ]
+        hits = await retrieve(
+            _make_db(rows), "q", _make_embedder(), k=5, similarity_min=0.25, hybrid=True
+        )
+
+        assert hits == []
+
+    async def test_hybrid_true_empty_db_result_returns_empty(self) -> None:
+        """No rows from DB when hybrid=True → empty list.
+
+        req: faq-rag-016
+        """
+        hits = await retrieve(
+            _make_db([]), "q", _make_embedder(), k=5, similarity_min=0.0, hybrid=True
+        )
+
+        assert hits == []
+
+    async def test_hybrid_true_execute_called_once(self) -> None:
+        """retrieve() with hybrid=True still calls db.execute() exactly once.
+
+        req: faq-rag-016 — one SQL round-trip regardless of mode.
+        """
+        db = _make_db([])
+        await retrieve(db, "q", _make_embedder(), k=5, similarity_min=0.0, hybrid=True)
+
+        db.execute.assert_awaited_once()
+
+    async def test_hybrid_false_default_cosine_ordering_unchanged(self) -> None:
+        """hybrid=False (default) produces the same ordering as the pre-Task-10 path.
+
+        Verified by checking that lower distance → higher score (1-distance) and
+        that the ordering of hits matches the pure cosine path.
+
+        req: faq-rag-009, faq-rag-016 (default-off)
+        """
+        rows = [
+            _Row(text="best", document_id=1, distance=0.1),  # sim=0.9
+            _Row(text="good", document_id=2, distance=0.3),  # sim=0.7
+        ]
+        # hybrid defaults to False — unchanged pure cosine behaviour
+        hits_default = await retrieve(
+            _make_db(rows), "q", _make_embedder(), k=5, similarity_min=0.0
+        )
+        hits_explicit = await retrieve(
+            _make_db(rows), "q", _make_embedder(), k=5, similarity_min=0.0, hybrid=False
+        )
+
+        assert len(hits_default) == 2
+        assert hits_default[0].text == "best"
+        assert hits_default[0].score == pytest.approx(0.9)
+        assert hits_default == hits_explicit
