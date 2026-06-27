@@ -191,6 +191,11 @@ export function StatusPill({ status, className }: StatusPillProps) {
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
         // Typographic scale: mono face for status tokens (per design.md)
         "font-mono text-[0.7rem] font-medium leading-none whitespace-nowrap",
+        // Calm cross-fade when status changes (e.g. ingesting → ready).
+        // Transitions background-color, border-color, and color between states.
+        // Disabled by the global prefers-reduced-motion override in globals.css
+        // and by the explicit motion-reduce utility below. (req admin-console-021)
+        "transition-colors duration-200 motion-reduce:transition-none",
         // Per-status color + border
         cfg.pillCn,
         className

@@ -36,36 +36,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { StatusPill } from "@/components/admin/StatusPill"
 import type { DocumentSummary } from "@/lib/adminApi"
-
-// ── Constants (mirror UploadDropzone, req admin-console-007 / 016) ──────────
-
-/** Accepted extensions — identical to UploadDropzone to ensure consistent UX. */
-const ACCEPTED_EXTENSIONS = [".pdf", ".md", ".txt"] as const
-
-/** Human-readable joined label for rejection messages. */
-const ACCEPTED_LABEL = ACCEPTED_EXTENSIONS.join(", ")
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Extract lower-cased dot-prefixed extension from a filename. */
-function getExtension(filename: string): string {
-  const dotIndex = filename.lastIndexOf(".")
-  if (dotIndex === -1) return ""
-  return filename.slice(dotIndex).toLowerCase()
-}
-
-/**
- * Validate a File against the accepted extensions.
- * Returns null on success, or a human-readable error string on failure.
- * (req admin-console-007 via admin-console-016: same validation for Replace)
- */
-function validateFile(file: File): string | null {
-  const ext = getExtension(file.name)
-  if ((ACCEPTED_EXTENSIONS as readonly string[]).includes(ext)) return null
-  return ext
-    ? `"${ext}" files are not accepted. Please upload a ${ACCEPTED_LABEL} file.`
-    : `Cannot determine file type. Please upload a ${ACCEPTED_LABEL} file.`
-}
+import { validateFile } from "@/lib/validateFile"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -169,7 +140,7 @@ export function DocumentCard({
     // Typography — small label, Public Sans (sans by default)
     "text-xs font-medium leading-none",
     // Transition — calm, reduced-motion respected via globals.css
-    "transition-colors duration-150",
+    "transition-colors duration-150 motion-reduce:transition-none",
     // Focus ring — accent aubergine, meets WCAG AA visibility
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
     // Disabled state
@@ -191,7 +162,7 @@ export function DocumentCard({
         "rounded-sm border border-border bg-background",
         "px-4 py-3",
         // Calm hover tint — paper surface lifts slightly toward muted
-        "transition-colors duration-150 hover:bg-muted/40"
+        "transition-colors duration-150 motion-reduce:transition-none hover:bg-muted/40"
       )}
     >
       {/* ── Primary row: name · pill · actions ──────────────────────────── */}
@@ -242,8 +213,9 @@ export function DocumentCard({
             aria-disabled={busy}
             className={cn(
               actionButton,
-              // Calm destructive tint — not alarming (req admin-console-015 / 021)
-              "text-destructive/70 hover:text-destructive hover:bg-destructive/8"
+              // Calm destructive tint — full opacity for WCAG AA contrast (req admin-console-021)
+              // text-destructive/70 ≈ 3.45:1 on paper (FAILS AA); full opacity ≈ 5.75:1 ✓
+              "text-destructive hover:bg-destructive/8"
             )}
           >
             Delete
@@ -258,7 +230,8 @@ export function DocumentCard({
           role="alert"
           aria-live="assertive"
           className={cn(
-            "text-xs text-destructive/80",
+            // text-destructive/80 ≈ 2.95:1 on paper (FAILS AA); full opacity ≈ 5.75:1 ✓
+            "text-xs text-destructive",
             "font-sans leading-snug"
           )}
         >

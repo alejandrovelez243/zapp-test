@@ -146,7 +146,15 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
 
       <span className="flex-1">{toast.message}</span>
 
-      {/* Dismiss button */}
+      {/*
+       * Dismiss button — text-muted-foreground (#6B6259) at full opacity.
+       *
+       * Previously used opacity-50 which dropped the × icon's effective
+       * contrast to ~2.0:1 on paper — fails WCAG SC 1.4.11 (Non-text
+       * Contrast, 3:1 for UI components). Full opacity gives ~5.26:1 ✓.
+       * The muted color already provides the desired visual quietness
+       * without an additional opacity layer. req: admin-console-021
+       */}
       <button
         type="button"
         aria-label="Dismiss notification"
@@ -154,8 +162,8 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
         onKeyDown={handleDismissKeyDown}
         className={cn(
           "shrink-0 self-start rounded p-0.5 text-muted-foreground",
-          "transition-opacity duration-150 hover:text-foreground hover:opacity-100 opacity-50",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "transition-colors duration-150 hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           "motion-reduce:transition-none"
         )}
       >

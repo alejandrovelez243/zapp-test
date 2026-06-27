@@ -325,7 +325,17 @@ export function DocumentList({
           className="flex flex-col gap-2"
         >
           {docs.map((doc) => (
-            <li key={doc.id}>
+            <li
+              key={doc.id}
+              className={cn(
+                // Calm fade-in when a card enters (upload success / list refresh).
+                // tw-animate-css animate-in + fade-in produces a CSS keyframe on mount.
+                // Exit animations require a library; enter-only is the pragmatic choice.
+                // Gated by motion-reduce utility + global animation-duration override.
+                // req: admin-console-021 (classical design system — calm motion)
+                "animate-in fade-in duration-200 motion-reduce:animate-none"
+              )}
+            >
               <DocumentCard
                 doc={doc}
                 onReplace={(file: File) => onReplace(doc.id, file)}

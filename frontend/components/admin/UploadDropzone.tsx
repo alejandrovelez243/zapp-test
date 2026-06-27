@@ -34,40 +34,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-/** Accepted file extensions (req admin-console-007). Lower-case, dot-prefixed. */
-const ACCEPTED_EXTENSIONS = [".pdf", ".md", ".txt"] as const
-type AcceptedExtension = (typeof ACCEPTED_EXTENSIONS)[number]
-
-/** Human-readable list for the rejection message and the hint copy. */
-const ACCEPTED_LABEL = ACCEPTED_EXTENSIONS.join(", ")
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Extract the lower-cased dot-prefixed extension from a filename.
- * Returns empty string if the name has no extension.
- */
-function getExtension(filename: string): string {
-  const dotIndex = filename.lastIndexOf(".")
-  if (dotIndex === -1) return ""
-  return filename.slice(dotIndex).toLowerCase()
-}
-
-/**
- * Validate a File object against the accepted extension list.
- * Returns null on success, or a human-readable error string on failure.
- * (req admin-console-007 — rejection before any request)
- */
-function validateFile(file: File): string | null {
-  const ext = getExtension(file.name)
-  if ((ACCEPTED_EXTENSIONS as readonly string[]).includes(ext)) return null
-  return ext
-    ? `"${ext}" files are not accepted. Please upload a ${ACCEPTED_LABEL} file.`
-    : `Cannot determine file type. Please upload a ${ACCEPTED_LABEL} file.`
-}
+import { ACCEPTED_LABEL, validateFile } from "@/lib/validateFile"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -233,7 +200,7 @@ export function UploadDropzone({ onFile, disabled = false, busy = false }: Uploa
           // Base border — warm grey hairline
           "border-border",
           // Calm transition on border-color (disabled by reduced-motion global override)
-          "transition-colors duration-200 ease-in-out",
+          "transition-colors duration-200 ease-in-out motion-reduce:transition-none",
           // Drag-over state — aubergine accent border intensifies (req admin-console-006)
           showAccentBorder && "border-primary bg-primary/[0.03]",
           // Normal hover state — slight border darkening for discoverability
@@ -245,6 +212,27 @@ export function UploadDropzone({ onFile, disabled = false, busy = false }: Uploa
           busy && "cursor-wait"
         )}
       >
+        {/*
+         * Accent meander hairline — appears at the top of the zone on drag-over.
+         *
+         * Reuses the .rule-meander utility with an inline --mc override that
+         * switches from transparent (idle) to the aubergine accent on drag-over.
+         * Transitions via opacity (CSS custom properties are not transitionable).
+         * Fully gated by prefers-reduced-motion via motion-reduce:transition-none
+         * and the global animation-duration override in globals.css.
+         *
+         * req: admin-console-006 (drag-over visual feedback), admin-console-021
+         */}
+        <span
+          aria-hidden="true"
+          className={cn(
+            "rule-meander pointer-events-none absolute inset-x-0 top-0 rounded-t",
+            "transition-opacity duration-200 ease-in-out motion-reduce:transition-none",
+            showAccentBorder ? "opacity-100" : "opacity-0"
+          )}
+          style={{ "--mc": "rgba(110, 44, 80, 0.55)" } as React.CSSProperties}
+        />
+
         {busy ? (
           /*
            * In-progress state (req admin-console-008).
@@ -313,7 +301,7 @@ function IdlePrompt({ isDragOver, disabled }: { isDragOver: boolean; disabled: b
         aria-hidden="true"
         focusable="false"
         className={cn(
-          "transition-colors duration-200",
+          "transition-colors duration-200 motion-reduce:transition-none",
           isDragOver ? "text-primary" : "text-muted-foreground"
         )}
       >
@@ -336,7 +324,7 @@ function IdlePrompt({ isDragOver, disabled }: { isDragOver: boolean; disabled: b
       <div className="space-y-1">
         <p
           className={cn(
-            "text-sm font-medium transition-colors duration-200",
+            "text-sm font-medium transition-colors duration-200 motion-reduce:transition-none",
             isDragOver ? "text-primary" : "text-foreground"
           )}
         >
