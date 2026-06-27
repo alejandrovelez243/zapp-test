@@ -145,10 +145,10 @@ jobs:
         run: docker build ./backend
 
   # ---------------------------------------------------------------------------
-  # FRONTEND: pnpm install (frozen) → pnpm build
+  # FRONTEND: pnpm install (frozen) → typecheck → lint → test → pnpm build
   # ---------------------------------------------------------------------------
   frontend:
-    name: Frontend — install / build
+    name: Frontend — install / typecheck / lint / test / build
     runs-on: ubuntu-latest
 
     defaults:
@@ -177,6 +177,15 @@ jobs:
         # --frozen-lockfile: pnpm-lock.yaml is authoritative; a drifted lockfile fails
         # the install rather than silently updating it.
         run: pnpm install --frozen-lockfile
+
+      - name: Type-check (tsc --noEmit)
+        run: pnpm typecheck
+
+      - name: Lint (eslint)
+        run: pnpm lint
+
+      - name: Test (vitest)
+        run: pnpm test
 
       - name: Build frontend
         env:
