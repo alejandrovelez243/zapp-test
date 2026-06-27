@@ -18,7 +18,7 @@
  */
 
 import Link from "next/link";
-import { DocumentsManager } from "@/components/admin/DocumentsManager";
+import { AdminConsole } from "@/components/admin/AdminConsole";
 
 export const metadata = {
   title: "Documents — Admin | Philosophy School",
@@ -57,9 +57,14 @@ export default function AdminDocumentsPage() {
           <div className="rule-meander mt-5" aria-hidden="true" />
         </header>
 
-        {/* ── DocumentsManager client island ──────────────────────────── */}
+        {/* ── AdminConsole client island ───────────────────────────────── */}
+        {/*
+         * AdminConsole owns the token gate vs. console state machine,
+         * the Toaster, DeleteConfirm, and all document-management UI.
+         * task 9 / req admin-console-001 … admin-console-005
+         */}
         <div className="flex-1">
-          <DocumentsManager />
+          <AdminConsole />
         </div>
       </div>
     </main>
