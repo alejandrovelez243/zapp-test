@@ -69,8 +69,22 @@ inline** in the upload request. The FAQ agent is an **orchestrator tool** (`deps
 - A reconciliation step (extend the output_validator, mirroring geo/lang): read `ctx.deps.rag` — if
   retrieval was empty or below threshold, **lower `confidence_score`** and **set `needs_review=true`**
   (faq-rag-011, -015). Anti-hallucination is enforced by the agent instructions + empty-retrieval path.
+- **Per-session FAQ memory (faq-rag-019):** `ask_faq` calls
+  `SessionRepository(ctx.deps.session).load_faq_messages(ctx.deps.session_id)` before the FAQ agent
+  run, passes the result as `message_history=` to `faq_agent.run(...)`, and calls
+  `repo.save_faq_messages(session_id, result.all_messages())` after a successful run.  History is stored
+  in `faq_history_json` (separate from the orchestrator's `history_json`) so the two contexts remain
+  independent.  A save failure is non-fatal (logged, turn continues with history loss).
 
-### 2.7 `app/api/documents.py` — admin endpoints (admin-token dependency)
+### 2.7 `app/agents/session.py` (edit) — FAQ sub-agent history columns + helpers
+- `ConversationSession.faq_history_json: str | None = None` — separate nullable TEXT column (migration
+  0006) for the FAQ sub-agent's own per-session history; independent of `history_json` (orchestrator).
+- `SessionRepository.load_faq_messages(session_id) -> list[ModelMessage] | None` — mirrors
+  `load_messages` but reads `faq_history_json`.
+- `SessionRepository.save_faq_messages(session_id, messages)` — mirrors `save_messages` but writes
+  `faq_history_json`. (faq-rag-019)
+
+### 2.8 `app/api/documents.py` — admin endpoints (admin-token dependency)
 - `POST /documents` (multipart upload; validate `pdf|md|txt`) → create `Document(status=pending)` →
   schedule the background ingest → `202`. `GET /documents` → list (id/name/status). `DELETE
   /documents/{id}` → remove doc + chunks. `PUT /documents/{id}` → `reingest_and_swap`. All require the
@@ -168,6 +182,7 @@ No `.ics`/event shapes touched. Writes contract fields `reply`, `confidence_scor
 | faq-rag-016 | `hybrid` branch in retrieve (§2.4) |
 | faq-rag-017 | embed error → degrade (§2.2, §2.6) |
 | faq-rag-018 | ingest failure → `status=failed` (§2.3) |
+| faq-rag-019 | `ask_faq` FAQ-history load/save (§2.6, §2.7); `ConversationSession.faq_history_json` + `SessionRepository` helpers; Alembic 0006 |
 
 ## 6. Open Decisions / Rejected Alternatives
 

@@ -63,10 +63,11 @@ path); a **reranker** (deferred); source **citations** (chosen: silent grounding
 16. WHERE `hybrid_retrieval` is enabled THE SYSTEM SHALL combine pgvector cosine scores with keyword scores before ranking chunks.   <!-- eval: faq-rag-016 -->
 17. IF the embedding gateway call fails during a query THEN THE SYSTEM SHALL degrade to a valid nine-field contract with `needs_review=true` (never a 5xx to the user).   <!-- eval: faq-rag-017 -->
 18. IF ingestion of a document fails THEN THE SYSTEM SHALL mark that document's status as failed AND keep the rest of the corpus usable.   <!-- eval: faq-rag-018 -->
+19. THE SYSTEM SHALL maintain a separate per-session message history for the FAQ sub-agent (stored in ``faq_history_json`` on ``ConversationSession``), forwarding it as ``message_history=`` to each FAQ agent run so the sub-agent accumulates context across turns independently of the orchestrator's own history.   <!-- eval: faq-rag-019 -->
 
 ## Case-id map
 
-`faq-rag-001..018` map 1:1 to eval `Case`s of the same id: happy (grounded answer), multilingual
+`faq-rag-001..019` map 1:1 to eval `Case`s of the same id: happy (grounded answer), multilingual
 (doc lang ≠ active_lang), anti-hallucination (out-of-corpus question → "I don't have that" +
 `needs_review`), admin-auth (reject without token), and low-retrieval / degraded paths. Ids are
 append-only. Retrieval-quality Cases assert on `reply` grounding + `needs_review`/`confidence_score`.

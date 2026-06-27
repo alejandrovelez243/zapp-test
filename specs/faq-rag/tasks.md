@@ -36,6 +36,8 @@ ingest/retrieve/agent consumers. Drive task-by-task via `/implement faq-rag`.
 
 - [ ] 12. Add eval Cases + verification: seed a tiny test corpus, add `faq-rag` eval Cases (grounded happy, anti-hallucination out-of-corpus → needs_review, multilingual doc≠active_lang, admin-auth reject, low-retrieval) to `backend/evals/datasets/`; run the suite to confirm grounding + anti-hallucination behavior. (Real run needs `PYDANTIC_AI_GATEWAY_API_KEY` + embeddings; the deterministic retrieval/reconcile logic is unit-verifiable without it.) — _req: faq-rag-001..faq-rag-018 — owner: eval-engineer_
 
+- [x] 13. Add per-session FAQ sub-agent memory: (a) add `faq_history_json: str | None = None` column to `ConversationSession`; (b) add `SessionRepository.load_faq_messages` / `save_faq_messages` (mirror `load_messages`/`save_messages`); (c) Alembic migration `0006_faq_history.py` adding the column (chains from 0005); (d) update `ask_faq` tool in `orchestrator.py` to load history before the FAQ agent run and save `result.all_messages()` after; (e) tests: two-turn FAQ session asserts 2nd run receives 1st turn messages; migration offline-SQL check. — _req: faq-rag-019 — owner: backend-engineer_
+
 ## Coverage
 
 | Req | Tasks |
@@ -58,6 +60,7 @@ ingest/retrieve/agent consumers. Drive task-by-task via `/implement faq-rag`.
 | faq-rag-016 | 2, 10, 11 |
 | faq-rag-017 | 4, 8, 11 |
 | faq-rag-018 | 5, 11 |
+| faq-rag-019 | 13 |
 
-Every requirement id (`faq-rag-001..018`) appears in at least one task. Verification = pytest (task 11)
+Every requirement id (`faq-rag-001..019`) appears in at least one task. Verification = pytest (task 11)
 + the eval grounding/anti-hallucination Cases (task 12) + CI.

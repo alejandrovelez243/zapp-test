@@ -11,7 +11,13 @@ Task 7 adds:
     :meth:`~SessionRepository.get_or_create`, :meth:`~SessionRepository.update_language_state`,
     :meth:`~SessionRepository.load_messages`, :meth:`~SessionRepository.save_messages`.
 
-Requirement: multilingual-007
+faq-rag-019 adds:
+  * ``faq_history_json`` nullable column on :class:`ConversationSession` (migration 0006).
+  * :meth:`~SessionRepository.load_faq_messages` / :meth:`~SessionRepository.save_faq_messages`
+    — mirrors the orchestrator history helpers but stores the FAQ sub-agent's own turn
+    history so it accumulates context across turns independently of the orchestrator.
+
+Requirement: multilingual-007, faq-rag-019
 """
 
 from datetime import UTC, datetime
@@ -89,6 +95,11 @@ class ConversationSession(SQLModel, table=True):
     # req: multilingual-007 — message history for coherence replay
     # Serialised via ModelMessagesTypeAdapter; null until the first turn completes.
     history_json: str | None = None
+
+    # req: faq-rag-019 — FAQ sub-agent's own per-session message history.
+    # Stored separately from history_json (orchestrator history) so the FAQ agent
+    # accumulates its own context independently.  Null until the first FAQ turn.
+    faq_history_json: str | None = None
 
     # req: evaluation-016, evaluation-018 — sweep guard; None until graded.
     graded_at: datetime | None = None
@@ -266,5 +277,58 @@ class SessionRepository:
         if row is None:
             raise ValueError(f"Session {session_id!r} not found; call get_or_create first.")
         row.history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
+        self.db.add(row)
+        await self.db.flush()
+
+    async def load_faq_messages(self, session_id: str) -> list[ModelMessage] | None:
+        """Return the persisted FAQ sub-agent history for *session_id*, or ``None``.
+
+        Deserialises ``faq_history_json`` via ``ModelMessagesTypeAdapter.validate_json``.
+        Returns ``None`` when the row does not exist or ``faq_history_json`` is
+        null/empty — callers pass the result directly as ``message_history=`` to the
+        FAQ agent run (``None`` starts a fresh context, matching pydantic-ai convention).
+
+        Mirrors :meth:`load_messages` but reads ``faq_history_json`` so the FAQ
+        sub-agent has an independent conversation context from the orchestrator.
+
+        req: faq-rag-019
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None or not row.faq_history_json:
+            return None
+        return ModelMessagesTypeAdapter.validate_json(row.faq_history_json)
+
+    async def save_faq_messages(
+        self,
+        session_id: str,
+        messages: list[ModelMessage],
+    ) -> None:
+        """Serialise *messages* and store them in the ``faq_history_json`` column.
+
+        Serialises via ``ModelMessagesTypeAdapter.dump_json`` (returns ``bytes``),
+        decodes to UTF-8 ``str``, and stores in ``faq_history_json`` on the existing
+        session row.
+
+        Raises ``ValueError`` if no row exists for *session_id* — callers must call
+        :meth:`get_or_create` before :meth:`save_faq_messages`.  The caller owns the
+        final ``commit``.
+
+        Mirrors :meth:`save_messages` but writes to ``faq_history_json`` so the FAQ
+        sub-agent accumulates its own history independently of the orchestrator.
+
+        req: faq-rag-019
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None:
+            raise ValueError(f"Session {session_id!r} not found; call get_or_create first.")
+        row.faq_history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
         self.db.add(row)
         await self.db.flush()

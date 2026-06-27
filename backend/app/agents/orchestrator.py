@@ -39,6 +39,7 @@ Design contract: specs/multilingual/design.md §2.4
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 from functools import lru_cache
 from zoneinfo import ZoneInfo
@@ -46,6 +47,7 @@ from zoneinfo import ZoneInfo
 from pydantic_ai import Agent, ModelRetry, RunContext
 
 from app.agents.faq import get_faq_agent  # lazy factory — key-free on import
+from app.agents.session import SessionRepository  # for FAQ-history load/save (faq-rag-019)
 from app.config import LANG_DISPLAY_NAMES, get_settings  # single source for display names
 from app.contract import GuardrailReport, TurnOutput
 from app.deps import AgentDeps
@@ -485,23 +487,57 @@ async def ask_faq(ctx: RunContext[AgentDeps], question: str) -> str:
     ``ctx.deps.rag.populated = True`` so ``_reconcile_rag`` knows the FAQ
     path was exercised this turn.
 
+    Per-session FAQ memory (faq-rag-019):
+      Loads the FAQ sub-agent's own history from ``faq_history_json`` on the
+      ``ConversationSession`` row, passes it as ``message_history=`` to the
+      agent run so the sub-agent accumulates context across turns, then saves
+      ``result.all_messages()`` back after a successful run.  History is stored
+      in a dedicated column (separate from the orchestrator's ``history_json``)
+      so the two contexts remain independent.
+
     On any exception from the FAQ agent (gateway errors, connection errors,
     unexpected model behaviour), the tool degrades gracefully by returning a
     safe fallback string and leaving ``rag.populated`` False so the validator
     does not damp confidence for non-FAQ turns.
 
     req: faq-rag-014 — deps+usage forwarded; capped by existing UsageLimits
+    req: faq-rag-019 — FAQ sub-agent accumulates its own per-session history
     Design contract: specs/faq-rag/design.md §2.6
     """
+    # Load FAQ sub-agent's own history for this session (faq-rag-019).
+    # Guard: session may be None in eval contexts (run_turn passes session=None by
+    # design because evals perform no DB writes).  Skip history when no session is
+    # available; the FAQ agent starts fresh, which is safe.
+    repo: SessionRepository | None = None
+    faq_history = None
+    if ctx.deps.session is not None:
+        repo = SessionRepository(ctx.deps.session)
+        faq_history = await repo.load_faq_messages(ctx.deps.session_id)
+
     try:
-        r = await get_faq_agent().run(question, deps=ctx.deps, usage=ctx.usage)
+        r = await get_faq_agent().run(
+            question,
+            deps=ctx.deps,
+            usage=ctx.usage,
+            message_history=faq_history,
+        )
     except Exception:
         # Degrade: never raise from a tool so TestModel can still complete the turn.
         # rag.populated stays False → _reconcile_rag skips dampening.
         return "FAQ service is temporarily unavailable."
+
     # Mark that the FAQ path was executed; _reconcile_rag reads this flag.
     # req: faq-rag-011 (populated flag distinguishes empty-hit from not-called)
     ctx.deps.rag.populated = True
+
+    # Persist the FAQ sub-agent's accumulated history (faq-rag-019).
+    # On save failure, continue — the turn is already done; history loss is
+    # non-fatal (next turn starts fresh, which is safe).  Skip when no repo
+    # (session is None — eval/test context with no DB writes).
+    if repo is not None:
+        with contextlib.suppress(Exception):
+            await repo.save_faq_messages(ctx.deps.session_id, r.all_messages())
+
     return r.output
 
 
