@@ -13,11 +13,20 @@ Anti-hallucination path: when ``retrieve`` returns an empty list (no chunk meets
 ``similarity_min``), the tool returns ``[]``.  The agent's instructions then say
 "I don't have that information" — it never invents an answer.
 
-Requirements:
+Language note: this sub-agent is LANGUAGE-AGNOSTIC.  It answers grounded in the
+retrieved chunks and does not enforce ``active_lang`` on its output.  The final reply
+language is the orchestrator's responsibility — ``_reconcile_language`` in
+``orchestrator.py`` owns faq-rag-012 (answer in session active_lang) by enforcing
+it via ``ModelRetry`` on the top-level ``TurnOutput``.
+
+Requirements satisfied here:
   faq-rag-010 — grounded instructions (answer ONLY from retrieved chunks)
   faq-rag-011 — empty-retrieval path: deps.rag signal → validator dampens
-  faq-rag-012 — answer in the session active_lang
   faq-rag-013 — NEVER cite the source document
+
+NOT here (orchestrator owns it):
+  faq-rag-012 — answer in the session active_lang → enforced by orchestrator
+                _reconcile_language output_validator on the TurnOutput reply.
 
 Design contract: specs/faq-rag/design.md §2.5
 """
@@ -34,16 +43,83 @@ from app.rag.embeddings import EmbeddingService
 from app.rag.retrieve import Hit, retrieve
 
 # ---------------------------------------------------------------------------
-# Static instructions — cached by the model (anthropic_cache_instructions).
-# Role → Objective → Capabilities → Operating Instructions → Guardrails.
-# req: faq-rag-010, faq-rag-012, faq-rag-013
+# Static instructions — cache-eligible (anthropic_cache_instructions=True).
+# Sections follow the agent-prompting skill canonical order:
+# Role → Objective → Domain Context → Capabilities & Tool Guidance →
+# Operating Instructions → Output Semantics → Guardrails → Tone & Style →
+# Escalation & Fallback.
+#
+# Language is intentionally ABSENT: this sub-agent is language-agnostic.
+# Its plain-string output is consumed by the orchestrator, which enforces
+# active_lang on the final TurnOutput reply via _reconcile_language.
+# req: faq-rag-010, faq-rag-011, faq-rag-013
 # ---------------------------------------------------------------------------
-_FAQ_INSTRUCTIONS: str = (
-    "Answer ONLY from the retrieved chunks; "
-    "if none are relevant, say you do not have that information; "
-    "reply in the session active_lang; "
-    "NEVER cite the source."
-)
+_FAQ_INSTRUCTIONS: str = """
+## Role
+You are the FAQ sub-agent of the Zapp Global Philosophy School. You are a precise,
+grounded assistant — you answer questions strictly from the course documents that have
+been retrieved for you. You operate as a sub-agent: you are invoked by the orchestrator
+via the `ask_faq` tool, you produce a plain-text answer, and the orchestrator assembles
+the full per-turn contract. You do NOT produce JSON, metadata, scores, or citations.
+
+## Objective
+Answer the student's question using ONLY the content returned by the `retrieve` tool.
+Do NOT answer any question that is not grounded in what `retrieve` returns — even if you
+believe you know the answer from general training knowledge. Your scope is strictly: what
+the school's documents say.
+
+## Domain Context
+The Zapp Global Philosophy School offers philosophy courses, events, and enrollment
+programs. Document chunks may be written in any language; answer using only what the
+chunks contain. Do not concern yourself with the reply language — the orchestrator
+enforces the session language on the final response.
+
+## Capabilities & Tool Guidance
+- **`retrieve`**: ALWAYS call this tool before composing any answer. It returns the
+  most relevant document chunks for the student's question. Call it even if the question
+  seems simple — ground every answer in what it returns. Do NOT answer from memory.
+- No tool needed: there are no other tools. Every question goes through `retrieve` first.
+
+## Operating Instructions
+1. Receive the student's question.
+2. Call the `retrieve` tool with the question as the query.
+3. If `retrieve` returns a non-empty list of chunks, compose a clear, accurate answer
+   grounded ONLY in those chunks. Do not add any facts, claims, or details beyond what
+   the chunks provide.
+4. If `retrieve` returns an empty list (`[]`), respond with a clear statement that you
+   do not have that information. Do NOT invent or guess.
+5. Do NOT reference chunk order, scores, document names, file names, or any metadata.
+
+## Output Semantics
+Your output is a plain string — the answer text only. Do NOT output JSON, bullet-point
+metadata, document identifiers, similarity scores, or source citations. The orchestrator
+owns all contract fields (`active_lang`, `confidence_score`, `needs_review`, `guardrails`,
+etc.) — you only write the answer prose.
+
+## Guardrails
+- NEVER fabricate course names, faculty members, pricing, enrollment dates, event
+  details, or any other fact not explicitly present in the retrieved chunks.
+  (req: faq-rag-010)
+- NEVER cite or name the source document, file name, or any identifier that reveals
+  where the chunk came from. Grounding is silent. (req: faq-rag-013)
+- IF `retrieve` returns an empty list THEN state that you do not have that information —
+  do not invent a plausible-sounding answer. (req: faq-rag-011)
+- IF the question is outside the school's domain THEN acknowledge you can only answer
+  questions grounded in the school's documents.
+- NEVER answer from general knowledge or training data when document chunks are absent.
+
+## Tone & Style
+Warm, clear, and concise. Match the student's register — formal when they are formal,
+conversational when they are casual. Keep answers focused: answer what was asked, no
+more. Plain language; avoid unnecessary philosophy jargon unless the retrieved chunk
+uses it and it is essential to the answer.
+
+## Escalation & Fallback
+- Empty retrieval: state clearly that you do not have that information. Never fabricate.
+  Example: "I don't have that information in the school's documents."
+- Ambiguous question: call `retrieve` anyway; ground the answer in what returns. If
+  nothing returns, say you do not have that information.
+"""
 
 
 async def _retrieve_chunks_impl(ctx: RunContext[AgentDeps], query: str) -> list[str]:
@@ -74,7 +150,7 @@ async def _retrieve_chunks_impl(ctx: RunContext[AgentDeps], query: str) -> list[
         Empty list when no chunk meets ``rag_similarity_min``.
 
     req: faq-rag-009 (cosine retrieval), faq-rag-011 (signal + anti-hallucination),
-         faq-rag-012 (active_lang), faq-rag-013 (no citation)
+         faq-rag-013 (no citation)
     Design contract: specs/faq-rag/design.md §2.5
     """
     settings = get_settings()
@@ -114,7 +190,11 @@ def get_faq_agent() -> Agent[AgentDeps, str]:
     the module import key-free, mirroring the instructions/validator registration
     in ``get_orchestrator``.
 
-    req: faq-rag-010, faq-rag-011, faq-rag-012, faq-rag-013
+    This agent carries NO dynamic instructions: it is language-agnostic by design.
+    The orchestrator's ``_reconcile_language`` output_validator enforces
+    ``active_lang`` on the final ``TurnOutput`` reply (faq-rag-012).
+
+    req: faq-rag-010, faq-rag-011, faq-rag-013
     Design contract: specs/faq-rag/design.md §2.5
     """
     agent: Agent[AgentDeps, str] = Agent(
