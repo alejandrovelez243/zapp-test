@@ -28,6 +28,7 @@
  */
 
 import * as React from "react";
+import { Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -160,8 +161,10 @@ export function Composer({ onSend, status, activeLang }: ComposerProps) {
            * Req frontend-shell-020: visible focus indicator — the shadcn
            * Textarea already applies `focus-visible:ring-3 focus-visible:ring-ring/50`
            * which maps to the theme --ring (aubergine accent) token.
+           * min-h-[44px] on mobile ensures the tap target meets the 44px
+           * minimum without changing the desktop appearance (usability-004).
            */
-          className="resize-none flex-1 min-h-[3rem] max-h-48"
+          className="resize-none flex-1 min-h-[44px] sm:min-h-[3rem] max-h-48"
           rows={1}
         />
 
@@ -170,6 +173,8 @@ export function Composer({ onSend, status, activeLang }: ComposerProps) {
           accessible aria-label.
           Disabled when sending (req 005) or when there is no non-empty text to
           send (good UX, also guards the empty-string case defensively).
+          min-h-[44px] + min-w-[44px] ensure mobile tap-target minimum.
+          The Send icon makes the action obvious at a glance (usability-003).
         */}
         <Button
           type="button"
@@ -177,14 +182,23 @@ export function Composer({ onSend, status, activeLang }: ComposerProps) {
           disabled={isSending || !value.trim()}
           aria-label={sendLabel}
           size="lg"
-          className="shrink-0 self-end"
+          className="shrink-0 self-end min-h-[44px] min-w-[44px] gap-1.5"
         >
           {/*
-            Show localized 'Send' normally; while sending, show the pending
-            label so the button itself communicates the in-flight state.
+            Show localized 'Send' label + icon normally; while sending, show
+            the pending label so the button communicates the in-flight state.
             req frontend-shell-005: calm pending affordance.
+            The Send icon is aria-hidden — the button's aria-label carries the
+            accessible name (req frontend-shell-020).
           */}
-          {isSending ? t(activeLang, "state.sending") : sendLabel}
+          {isSending ? (
+            t(activeLang, "state.sending")
+          ) : (
+            <>
+              <span>{sendLabel}</span>
+              <Send size={14} aria-hidden="true" />
+            </>
+          )}
         </Button>
       </div>
 
@@ -194,8 +208,15 @@ export function Composer({ onSend, status, activeLang }: ComposerProps) {
         aria-live="polite" lets a screen reader announce the change without
         interrupting ongoing speech — req frontend-shell-020.
       */}
+      {/*
+        Hint text: shows keyboard shortcut copy normally, or "Thinking…" while
+        a request is in flight.  Slightly more prominent font-size on mobile
+        (readable without zooming) while remaining secondary to the transcript.
+        aria-live="polite" announces the "Thinking…" state to screen readers.
+        req frontend-shell-020.
+      */}
       <p
-        className="text-xs text-muted-foreground pl-0.5 select-none"
+        className="text-xs text-muted-foreground pl-0.5 select-none leading-snug"
         aria-live="polite"
         aria-atomic="true"
       >

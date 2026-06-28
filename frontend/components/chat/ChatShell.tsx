@@ -33,6 +33,8 @@ import { useEffect, useRef, useCallback } from "react";
 import { useChat } from "@/lib/hooks/useChat";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
+import { EmptyState } from "./EmptyState";
+import { ThinkingTurn } from "./ThinkingTurn";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -90,7 +92,7 @@ export function ChatShell() {
        * (~66ch) for a classical reading measure.  Horizontal padding gives
        * generous margins on wider viewports.
        */}
-      <div className="flex flex-col flex-1 min-h-0 w-full max-w-[66ch] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex flex-col flex-1 min-h-0 w-full max-w-[66ch] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
 
         {/* ── Editorial header ─────────────────────────────────────────── */}
         <header className="mb-6 shrink-0">
@@ -131,20 +133,32 @@ export function ChatShell() {
           className="flex-1 min-h-0 overflow-y-auto pb-4"
         >
           {/*
-           * If no turns yet, render a calm invitation so the surface is never
-           * blank — a considered, literary placeholder.
+           * Empty state: when no turns exist, show a literary welcome and
+           * 3-4 clickable starter questions appropriate to a Philosophy School.
+           * Clicking a prompt calls send() directly (usability-001).
+           *
+           * Once the first student turn is appended (turns.length > 0), the
+           * EmptyState is replaced by the Transcript — they are mutually exclusive.
            */}
           {turns.length === 0 ? (
-            <p className="text-muted-foreground text-sm italic mt-8 text-center select-none">
-              Begin your inquiry below.
-            </p>
+            <EmptyState activeLang={activeLang} onPrompt={send} />
           ) : (
             /*
              * Transcript: aria-live log; passes activeLang so every
              * ContractMeta component localizes to the session language.
              * req frontend-shell-001, frontend-shell-015, frontend-shell-019.
+             *
+             * ThinkingTurn: in-transcript pending affordance shown while a
+             * request is in flight (usability-002).  The hook appends the
+             * student turn before setting status='sending', so turns.length > 0
+             * is always true here — no edge case.
              */
-            <Transcript turns={turns} activeLang={activeLang} />
+            <>
+              <Transcript turns={turns} activeLang={activeLang} />
+              {status === "sending" && (
+                <ThinkingTurn activeLang={activeLang} />
+              )}
+            </>
           )}
         </div>
 

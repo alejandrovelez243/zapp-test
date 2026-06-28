@@ -45,7 +45,14 @@ export type I18nKey =
   | "details.label.detectedCountry"
   | "details.label.normalizedText"
   | "a11y.transcriptLabel"
-  | "a11y.newReply";
+  | "a11y.newReply"
+  // Empty-state welcome + suggested starter prompts (usability-001)
+  | "emptyState.welcome"
+  | "emptyState.promptsLabel"
+  | "emptyState.prompt1"
+  | "emptyState.prompt2"
+  | "emptyState.prompt3"
+  | "emptyState.prompt4";
 
 /** A complete locale dictionary — every I18nKey must be present. */
 export type Dict = Record<I18nKey, string>;

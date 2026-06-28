@@ -29,6 +29,13 @@ const en: Dict = {
   "details.label.normalizedText": "Normalized text",
   "a11y.transcriptLabel": "Conversation transcript",
   "a11y.newReply": "New reply from the assistant",
+  // Empty-state welcome + suggested starter prompts (usability-001)
+  "emptyState.welcome": "Welcome. The examined life begins with a question.",
+  "emptyState.promptsLabel": "Suggested questions",
+  "emptyState.prompt1": "What courses do you offer?",
+  "emptyState.prompt2": "How do I enroll in an event?",
+  "emptyState.prompt3": "What is Stoicism?",
+  "emptyState.prompt4": "Tell me about the school’s philosophy",
 };
 
 export default en;
