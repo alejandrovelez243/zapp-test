@@ -185,6 +185,10 @@ async def upload_document(
     doc_id = doc.id
     if doc_id is None:
         raise HTTPException(status_code=500, detail="Document ID not assigned after flush")
+    # Commit NOW so the row is visible to the background task's fresh session.
+    # Without this the ingest task races the request-teardown commit and sees no row
+    # ("document not found") → the document is stuck at "pending" forever.
+    await db.commit()
     background_tasks.add_task(_background_ingest, doc_id, content, ext)
     return DocumentCreatedResponse(id=doc_id)
 
