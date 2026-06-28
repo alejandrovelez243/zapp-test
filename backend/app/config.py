@@ -121,6 +121,12 @@ class Settings(BaseSettings):
     # Timezone applied when REST Countries enrichment is skipped or fails.
     default_timezone: str = "UTC"
 
+    # --- Events (req: events-018) ---
+    # Master flag: when False, the ask_events orchestrator tool is not registered and
+    # enrollment is unavailable.  Default on for production; set EVENTS_ENABLED=false
+    # in env to disable the events tool (e.g. during debugging or rollback).
+    events_enabled: bool = True
+
     # --- FAQ-RAG (req: faq-rag-005, faq-rag-009, faq-rag-016) ---
     # Tier-3 flag: when False (default) retrieval uses cosine-only (pgvector HNSW);
     # when True, also adds a keyword score (Postgres ILIKE / ts_rank) before ranking.

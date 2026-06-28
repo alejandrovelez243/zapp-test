@@ -17,7 +17,13 @@ faq-rag-019 adds:
     — mirrors the orchestrator history helpers but stores the FAQ sub-agent's own turn
     history so it accumulates context across turns independently of the orchestrator.
 
-Requirement: multilingual-007, faq-rag-019
+events (migration 0008) adds:
+  * ``events_history_json`` nullable column on :class:`ConversationSession`.
+  * :meth:`~SessionRepository.load_events_messages` /
+    :meth:`~SessionRepository.save_events_messages`
+    — mirrors the faq history helpers but stores the events sub-agent's own turn history.
+
+Requirement: multilingual-007, faq-rag-019, events-014
 """
 
 from datetime import datetime
@@ -90,6 +96,11 @@ class ConversationSession(SQLModel, table=True):
     # Stored separately from history_json (orchestrator history) so the FAQ agent
     # accumulates its own context independently.  Null until the first FAQ turn.
     faq_history_json: str | None = None
+
+    # req: events-014 — events sub-agent's own per-session message history (migration 0008).
+    # Stored separately from history_json and faq_history_json so the events agent
+    # accumulates its own enrollment conversation context independently.
+    events_history_json: str | None = None
 
     # req: evaluation-016, evaluation-018 — sweep guard; None until graded.
     graded_at: datetime | None = None
@@ -320,5 +331,58 @@ class SessionRepository:
         if row is None:
             raise ValueError(f"Session {session_id!r} not found; call get_or_create first.")
         row.faq_history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
+        self.db.add(row)
+        await self.db.flush()
+
+    async def load_events_messages(self, session_id: str) -> list[ModelMessage] | None:
+        """Return the persisted events sub-agent history for *session_id*, or ``None``.
+
+        Deserialises ``events_history_json`` via ``ModelMessagesTypeAdapter.validate_json``.
+        Returns ``None`` when the row does not exist or ``events_history_json`` is
+        null/empty — callers pass the result directly as ``message_history=`` to the
+        events agent run (``None`` starts a fresh context).
+
+        Mirrors :meth:`load_faq_messages` but reads ``events_history_json`` so the
+        events sub-agent has an independent conversation context.
+
+        req: events-014
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None or not row.events_history_json:
+            return None
+        return ModelMessagesTypeAdapter.validate_json(row.events_history_json)
+
+    async def save_events_messages(
+        self,
+        session_id: str,
+        messages: list[ModelMessage],
+    ) -> None:
+        """Serialise *messages* and store them in the ``events_history_json`` column.
+
+        Serialises via ``ModelMessagesTypeAdapter.dump_json`` (returns ``bytes``),
+        decodes to UTF-8 ``str``, and stores in ``events_history_json`` on the existing
+        session row.
+
+        Raises ``ValueError`` if no row exists for *session_id* — callers must call
+        :meth:`get_or_create` before :meth:`save_events_messages`.  The caller owns the
+        final ``commit``.
+
+        Mirrors :meth:`save_faq_messages` but writes to ``events_history_json`` so the
+        events sub-agent accumulates its own history independently.
+
+        req: events-014
+        """
+        stmt = select(ConversationSession).where(
+            ConversationSession.id == session_id  # type: ignore[arg-type]
+        )
+        result = await self.db.execute(stmt)
+        row: ConversationSession | None = result.scalar_one_or_none()
+        if row is None:
+            raise ValueError(f"Session {session_id!r} not found; call get_or_create first.")
+        row.events_history_json = ModelMessagesTypeAdapter.dump_json(messages).decode("utf-8")
         self.db.add(row)
         await self.db.flush()

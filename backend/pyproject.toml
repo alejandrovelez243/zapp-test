@@ -97,6 +97,8 @@ files = ["app"]
 module = [
     "pgvector.*",
     "posthog.*",
+    "ics.*",
+    "arrow.*",
 ]
 ignore_missing_imports = true
 
