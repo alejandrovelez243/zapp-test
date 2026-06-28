@@ -26,6 +26,7 @@
  * Traces: frontend-shell-001, frontend-shell-004, frontend-shell-019
  */
 
+import type { ReactNode } from "react";
 import type { ChatTurn } from "@/lib/contract";
 import { t } from "@/lib/i18n";
 import { LangIndicator } from "./contract/LangIndicator";
@@ -62,6 +63,39 @@ const STUDENT_LABEL: Readonly<Record<string, string>> = {
   es: "Tú",
   pt: "Você",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Reply rendering — turn `.ics` calendar paths into clickable download links
+// ---------------------------------------------------------------------------
+
+/**
+ * The events agent embeds a calendar path like `/events/3/ics` in its reply.
+ * The browser reaches the backend through the same-origin `/api/*` proxy
+ * (next.config rewrite), so the bare path must be rewritten to `/api/events/N/ics`
+ * AND rendered as a real download link — otherwise it shows as inert plain text.
+ */
+function renderReplyWithIcsLinks(reply: string): ReactNode[] {
+  const re = /\/events\/(\d+)\/ics/g;
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(reply)) !== null) {
+    if (m.index > last) nodes.push(reply.slice(last, m.index));
+    nodes.push(
+      <a
+        key={m.index}
+        href={`/api/events/${m[1]}/ics`}
+        download
+        className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        {m[0]}
+      </a>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < reply.length) nodes.push(reply.slice(last));
+  return nodes;
+}
 
 // ---------------------------------------------------------------------------
 // Private sub-components
@@ -145,7 +179,7 @@ function AssistantTurn({
        * reply without allowing unconstrained text overflow.
        */}
       <p className="font-heading text-foreground text-base leading-relaxed max-w-prose whitespace-pre-wrap">
-        {turn.contract.reply}
+        {renderReplyWithIcsLinks(turn.contract.reply)}
       </p>
 
       {/*
