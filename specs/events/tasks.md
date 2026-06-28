@@ -11,7 +11,7 @@ Prereqs (dep, config, models/migration) precede consumers. Drive via `/implement
 
 ## Tasks
 
-- [ ] 1. Add the `.ics` dependency via `uv add ics` (do NOT hand-edit `pyproject.toml`/`uv.lock`). — _req: events-012 — owner: devops-engineer_
+- [x] 1. Add the `.ics` dependency via `uv add ics` (do NOT hand-edit `pyproject.toml`/`uv.lock`). — _req: events-012 — owner: devops-engineer_
 
 - [ ] 2. Add `events_enabled: bool = True` to `app/config.py` `Settings`. — _req: events-018 — owner: backend-engineer_
 
