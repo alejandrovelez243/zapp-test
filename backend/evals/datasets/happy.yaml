@@ -140,3 +140,75 @@ cases:
       lang: en
       must_trip: []
       requirement: evaluation-011
+
+  # ---------------------------------------------------------------------------
+  # events-007
+  # Requirement: WHEN a user asks about events THE SYSTEM SHALL list the
+  # available events (with their ids held by the agent) via an orchestrator tool.
+  # Scenario: Spanish-speaking student asks what events are available; the
+  # orchestrator routes to ask_events.  In the no-DB offline harness the events
+  # agent raises (session=None) and ask_events returns the safe fallback string;
+  # the orchestrator replies in Spanish with needs_review=false (turn is
+  # structurally complete — the degradation is internal to the tool).
+  # Asserts: active_lang=es, needs_review=false (chat-observable without DB).
+  # DB-dependent assertions (actual event listing) are covered by pytest (task 9).
+  # ---------------------------------------------------------------------------
+  - name: events-007
+    inputs:
+      message: "¿Qué eventos filosóficos tiene la escuela disponibles ahora mismo?"
+      ip: "189.210.1.1"
+    expected_output:
+      active_lang: es
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: es
+      must_trip: []
+      requirement: events-007
+
+  # ---------------------------------------------------------------------------
+  # events-008
+  # Requirement: WHEN a user wants to enroll THE SYSTEM SHALL ask for the user's
+  # name and which event, and the enroll tool SHALL receive the resolved event_id
+  # and name.
+  # Scenario: English-speaking student expresses enrollment intent; orchestrator
+  # routes to ask_events.  In the no-DB harness the events agent raises and
+  # ask_events returns the safe fallback; the orchestrator replies in English.
+  # Asserts: active_lang=en, needs_review=false (conversational engagement is
+  # chat-observable without DB; DB-level enroll persistence is pytest-covered).
+  # ---------------------------------------------------------------------------
+  - name: events-008
+    inputs:
+      message: "I would like to enroll in one of the upcoming events at the school. How do I do that?"
+      ip: "72.14.192.1"
+    expected_output:
+      active_lang: en
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: en
+      must_trip: []
+      requirement: events-008
+
+  # ---------------------------------------------------------------------------
+  # events-009
+  # Requirement: WHEN a user requests enrollment THE SYSTEM SHALL confirm the
+  # event and name with the user BEFORE persisting the enrollment.
+  # Scenario: Portuguese-speaking student requests enrollment; orchestrator
+  # routes to ask_events.  In the no-DB harness the events agent raises and
+  # ask_events returns the safe fallback; the orchestrator replies in Portuguese.
+  # Asserts: active_lang=pt, needs_review=false (confirm-before-enroll wording
+  # is chat-observable; actual DB persist is pytest-covered by task 9).
+  # ---------------------------------------------------------------------------
+  - name: events-009
+    inputs:
+      message: "Quero me inscrever no próximo evento da escola de filosofia. O que preciso fazer?"
+      ip: "200.147.1.1"
+    expected_output:
+      active_lang: pt
+      needs_review: false
+    metadata:
+      suite: happy
+      lang: pt
+      must_trip: []
+      requirement: events-009

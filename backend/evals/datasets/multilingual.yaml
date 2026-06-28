@@ -423,3 +423,33 @@ cases:
         the locked active_lang (switch pending, not yet fired) THE SYSTEM SHALL
         OFFER in the reply to continue in that language AND NOT claim it cannot
         change language.
+
+  # ---------------------------------------------------------------------------
+  # events-015
+  # Requirement: THE SYSTEM SHALL conduct the events conversation and .ics text
+  # in the session active_lang (ES/EN/PT); an unsupported language falls back to
+  # the configured fallback AND sets needs_review=true.
+  # Scenario: first-turn French message with an events enrollment request.
+  # French is unsupported -> active_lang falls back to "en" (configured fallback)
+  # AND needs_review=true (lang_decision.fallback_used=True sets the flag in
+  # _reconcile_language).  The events context is a concrete example of events-015.
+  # The ask_events tool may or may not be called; language fallback is orthogonal.
+  # Asserts: active_lang=en (fallback), needs_review=true.
+  # .ics text localisation and DB-dependent enrollment are pytest-covered (task 9).
+  # ---------------------------------------------------------------------------
+  - name: events-015
+    inputs:
+      session_id: sess-ev-015
+      message: "Je voudrais m'inscrire à l'événement de philosophie stoïcienne. Quand est-ce que ça commence?"
+    expected_output:
+      active_lang: en
+      needs_review: true
+    metadata:
+      suite: multilingual
+      input_lang: fr
+      unsupported_input: true
+      first_turn: true
+      requirement: >-
+        THE SYSTEM SHALL conduct the events conversation and .ics text in the
+        session active_lang (ES/EN/PT); an unsupported language falls back to
+        the configured fallback AND sets needs_review=true.
