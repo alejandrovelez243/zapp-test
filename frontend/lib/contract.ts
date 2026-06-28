@@ -24,8 +24,9 @@ export interface TurnOutput {
   lang_confidence: number;
   /** LLM + API fused, locale-normalised input text. */
   final_normalized_text: string;
-  /** Fused geo signal — ISO 3166-1 alpha-2 country code. */
-  detected_country: string;
+  /** Fused geo signal — ISO 3166-1 alpha-2 country code, or null when geo is
+   *  unavailable (private IP, geo disabled, lookup failure). */
+  detected_country: string | null;
   /** Combined logic confidence score (0–1). */
   confidence_score: number;
   /** True when confidence is low, languages diverge, or errors occurred. */
@@ -50,7 +51,8 @@ export function isTurnOutput(x: unknown): x is TurnOutput {
   if (typeof o.active_lang !== "string") return false;
   if (typeof o.lang_confidence !== "number") return false;
   if (typeof o.final_normalized_text !== "string") return false;
-  if (typeof o.detected_country !== "string") return false;
+  // detected_country is nullable: ISO 3166-1 alpha-2 string OR null (geo unavailable).
+  if (o.detected_country !== null && typeof o.detected_country !== "string") return false;
   if (typeof o.confidence_score !== "number") return false;
   if (typeof o.needs_review !== "boolean") return false;
 
