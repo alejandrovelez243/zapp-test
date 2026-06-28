@@ -83,18 +83,20 @@ services:
     ports:
       - "8000:8000"
 
-  # --- Frontend (Next.js + pnpm) — AUTHORED, not yet buildable -------------------
-  # NOTE: frontend/ has no package.json/pnpm-lock.yaml until Task 15, so this service
-  # cannot build/start yet. It is defined now so the one-command UX is captured. Bring
-  # up db+backend only for now:  `docker compose up -d db backend`.
-  # NEXT_PUBLIC_API_URL is read by the BROWSER (host side), so it points at the host-
-  # published backend port (localhost:8000), not the in-network `backend` hostname.
+  # --- Frontend (Next.js + pnpm) ------------------------------------------------
+  # NEXT_PUBLIC_API_URL is the SERVER-SIDE proxy target for the Next.js rewrite
+  # (`/api/:path*` -> `${NEXT_PUBLIC_API_URL}/:path*`, see frontend/next.config.ts).
+  # That rewrite runs INSIDE this container, so it MUST use the compose service hostname
+  # `backend:8000` — NOT `localhost`, which inside the frontend container resolves to the
+  # frontend itself and yields `ECONNREFUSED 127.0.0.1:8000`. The browser only ever calls
+  # same-origin `/api/*` (lib/api.ts, lib/adminApi.ts), so it never needs to resolve the
+  # `backend` hostname; no client code reads NEXT_PUBLIC_API_URL directly.
   frontend:
     build: ./frontend
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://backend:8000
     ports:
       - "3000:3000"
     command: pnpm dev
