@@ -309,14 +309,14 @@ class TestIngestDocument:
         assert db.add.call_count == 3
 
     async def test_happy_path_commit_called(self) -> None:
-        """db.commit() is called exactly once on success.
+        """db.commit() is called twice on success: "ingesting" (visibility) then "ready".
 
         req: faq-rag-003
         """
         doc = _make_doc()
         db = _make_db(doc=doc)
         await ingest_document(db, doc.id or 1, b"text", "txt", FakeEmbedder())
-        db.commit.assert_called_once()
+        assert db.commit.call_count == 2
 
     async def test_embedder_failure_sets_status_failed(self) -> None:
         """When the embedder raises, Document.status becomes 'failed'.
@@ -342,7 +342,7 @@ class TestIngestDocument:
         assert doc.error == "timeout"
 
     async def test_embedder_failure_commits_failed_status(self) -> None:
-        """On failure, db.commit() is still called to persist status=failed.
+        """On failure, db.commit() persists status=failed (after the "ingesting" commit).
 
         req: faq-rag-018
         """
@@ -350,7 +350,8 @@ class TestIngestDocument:
         db = _make_db(doc=doc)
         embedder = FakeEmbedder(raise_exc=RuntimeError("err"))
         await ingest_document(db, doc.id or 1, b"text", "txt", embedder)
-        db.commit.assert_called_once()
+        assert db.commit.call_count == 2
+        assert doc.status == "failed"
 
     async def test_extract_failure_sets_status_failed(self) -> None:
         """Unsupported content_type during extract -> status=failed, corpus intact.

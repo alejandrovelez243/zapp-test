@@ -27,12 +27,24 @@ Design contract: specs/faq-rag/design.md §2.2
 
 from __future__ import annotations
 
+import asyncio
 from functools import lru_cache
 
 import logfire
 from pydantic_ai import Embedder
 
 from app.config import get_settings
+
+# Fallback when Settings cannot load (e.g. isolated unit tests with no env).
+_DEFAULT_EMBED_TIMEOUT = 30.0
+
+
+def _embed_timeout() -> float:
+    """Embed-call timeout from settings, falling back to a default if env is absent."""
+    try:
+        return get_settings().embedding_timeout
+    except Exception:
+        return _DEFAULT_EMBED_TIMEOUT
 
 
 class EmbeddingError(Exception):
@@ -102,12 +114,15 @@ class EmbeddingService:
         req: faq-rag-005, faq-rag-017
         """
         embedder = self._get_embedder()
+        timeout = _embed_timeout()
         with logfire.span("embed", embed_kind="documents", input_count=len(texts)):
             try:
-                result = await embedder.embed_documents(texts)
+                result = await asyncio.wait_for(embedder.embed_documents(texts), timeout=timeout)
                 # EmbeddingResult.embeddings: Sequence[Sequence[float]]
                 # Convert to list[list[float]] for callers (JSON-serialisable, typed).
                 return [list(vec) for vec in result.embeddings]
+            except TimeoutError as exc:
+                raise EmbeddingError(f"embed_documents timed out after {timeout}s: {exc}") from exc
             except Exception as exc:
                 raise EmbeddingError(f"embed_documents failed: {exc}") from exc
 
@@ -130,11 +145,14 @@ class EmbeddingService:
         req: faq-rag-005, faq-rag-017
         """
         embedder = self._get_embedder()
+        timeout = _embed_timeout()
         with logfire.span("embed", embed_kind="query"):
             try:
-                result = await embedder.embed_query(text)
+                result = await asyncio.wait_for(embedder.embed_query(text), timeout=timeout)
                 # result.embeddings[0] is the single query vector.
                 return list(result.embeddings[0])
+            except TimeoutError as exc:
+                raise EmbeddingError(f"embed_query timed out after {timeout}s: {exc}") from exc
             except Exception as exc:
                 raise EmbeddingError(f"embed_query failed: {exc}") from exc
 

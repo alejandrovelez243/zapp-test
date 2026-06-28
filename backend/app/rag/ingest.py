@@ -21,6 +21,7 @@ Design contract: specs/faq-rag/design.md §2.3
 from __future__ import annotations
 
 import io
+import logging
 
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,8 @@ from app.config import get_settings
 from app.rag.embeddings import EmbeddingService
 from app.rag.models import Document, DocumentChunk
 from app.time import now_utc
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Text extraction — req: faq-rag-003
@@ -173,18 +176,35 @@ async def ingest_document(
     """
     doc: Document | None = await db.get(Document, document_id)
     if doc is None:
+        log.warning("ingest skipped: document %s not found (deleted before run)", document_id)
         return  # Guard: document deleted between schedule and execution.
 
     settings = get_settings()
+    log.info("ingest START doc=%s name=%s type=%s", document_id, doc.name, content_type)
     try:
+        # Commit "ingesting" immediately so a concurrent GET /documents sees progress
+        # (status is otherwise only flushed, invisible to other sessions until commit).
         await _set_status(db, doc, "ingesting")
+        await db.commit()
         text = extract_text(content, content_type)
         chunks = chunk_text(text, settings.chunk_size, settings.chunk_overlap)
+        log.info(
+            "ingest doc=%s extracted %d chars -> %d chunks", document_id, len(text), len(chunks)
+        )
         if chunks:
+            log.info(
+                "ingest doc=%s embedding %d chunks (%s)",
+                document_id,
+                len(chunks),
+                settings.embedding_model,
+            )
             await _insert_chunks(db, document_id, chunks, embedder)
+            log.info("ingest doc=%s embedded+inserted %d chunks", document_id, len(chunks))
         await _set_status(db, doc, "ready")
         await db.commit()
+        log.info("ingest READY doc=%s (%d chunks)", document_id, len(chunks))
     except Exception as exc:
+        log.exception("ingest FAILED doc=%s: %s", document_id, exc)
         await _set_status(db, doc, "failed", error=str(exc))
         await db.commit()
 

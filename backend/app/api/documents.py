@@ -21,6 +21,8 @@ Design contract: specs/faq-rag/design.md §2.7
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, UploadFile
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
@@ -32,6 +34,8 @@ from app.db import get_session, get_sessionmaker
 from app.rag.embeddings import EmbeddingService
 from app.rag.ingest import ingest_document, reingest_and_swap
 from app.rag.models import Document, DocumentChunk
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -95,8 +99,14 @@ async def _background_ingest(doc_id: int, content: bytes, content_type: str) -> 
 
     req: faq-rag-003
     """
-    async with get_sessionmaker()() as db:
-        await ingest_document(db, doc_id, content, content_type, EmbeddingService())
+    log.info("background ingest task fired for doc=%s (%d bytes)", doc_id, len(content))
+    try:
+        async with get_sessionmaker()() as db:
+            await ingest_document(db, doc_id, content, content_type, EmbeddingService())
+    except Exception:
+        # ingest_document handles its own failures; this catches session/setup errors
+        # so a background-task crash is never silent.
+        log.exception("background ingest task crashed for doc=%s", doc_id)
 
 
 async def _background_reingest(doc_id: int, content: bytes, content_type: str) -> None:
@@ -104,8 +114,12 @@ async def _background_reingest(doc_id: int, content: bytes, content_type: str) -
 
     req: faq-rag-008
     """
-    async with get_sessionmaker()() as db:
-        await reingest_and_swap(db, doc_id, content, content_type, EmbeddingService())
+    log.info("background reingest task fired for doc=%s (%d bytes)", doc_id, len(content))
+    try:
+        async with get_sessionmaker()() as db:
+            await reingest_and_swap(db, doc_id, content, content_type, EmbeddingService())
+    except Exception:
+        log.exception("background reingest task crashed for doc=%s", doc_id)
 
 
 # ---------------------------------------------------------------------------

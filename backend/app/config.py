@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     # req: faq-rag-005
     embedding_dim: int = 1536
 
+    # Per-batch embed call timeout (seconds) — a hung gateway embed must FAIL the
+    # ingest (status="failed", visible) rather than leave the document stuck.
+    embedding_timeout: float = 30.0
+
     # Size of each text chunk (in characters) produced by the ingestion splitter.
     # req: faq-rag-005
     chunk_size: int = 1000

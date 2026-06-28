@@ -71,6 +71,11 @@ def configure_observability(app: FastAPI) -> None:
         # Idempotent: instrumentation is global; do not double-instrument on re-entry.
         return
 
+    # Ensure app INFO logs (ingest pipeline, etc.) reach stdout (docker/Railway).
+    # uvicorn configures its own loggers but not the root, so stdlib app logs would
+    # otherwise be invisible. basicConfig is a no-op if the root already has handlers.
+    logging.basicConfig(level=logging.INFO)
+
     # Importing settings can itself raise (required env absent in local/CI/static checks).
     # Treat that exactly like "no tokens" -> safe no-op.
     from app.config import get_settings
