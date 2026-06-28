@@ -31,8 +31,11 @@ code="$(printf '%s\n' "$staged" | grep -E '^(backend|frontend)/' | grep -vE '(^|
 [ -z "$code" ] && exit 0
 
 # Committed file tree in HEAD (empty before the first commit).
+# --full-tree: list from the repo root regardless of the caller's cwd. Without it,
+# `git ls-tree` restricts the listing to the current working directory, so a commit
+# launched from a subdir (e.g. backend/) never sees specs/ and is wrongly BLOCKED.
 if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-  tree="$(git ls-tree -r --name-only HEAD 2>/dev/null || true)"
+  tree="$(git ls-tree -r --full-tree --name-only HEAD 2>/dev/null || true)"
 else
   tree=""
 fi
