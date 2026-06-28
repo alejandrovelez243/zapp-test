@@ -194,8 +194,9 @@ describe("admin-console-004 — sign-out clears token and returns to gate", () =
 
     render(<AdminConsole />)
 
-    // Console view: Sign out button is immediately visible (token set synchronously)
-    const signOutBtn = screen.getByRole("button", { name: /Sign out/i })
+    // Console view: Sign out button appears after the mount effect reads
+    // sessionStorage and updates state (deferred via setTimeout 0).
+    const signOutBtn = await screen.findByRole("button", { name: /Sign out/i })
     expect(signOutBtn).toBeInTheDocument()
 
     await user.click(signOutBtn)
@@ -400,9 +401,13 @@ describe("admin-console-009 — upload success shows success toast and refreshes
 
     render(<AdminConsole />)
 
-    // Wait for the initial list load to complete (deferred via setTimeout 0)
+    // Wait for both initial loads to settle:
+    //   1. Load with empty token (first render — hydration fix initialises to "")
+    //   2. Load with stored token (after mount effect reads sessionStorage)
+    // Both are deferred via setTimeout(0); the second fires after the mount
+    // effect sets the token, triggering a fresh useDocuments refresh. req: 009.
     await waitFor(() =>
-      expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(2)
     )
 
     // UploadDropzone is the first input[type="file"] in the DOM
@@ -424,8 +429,9 @@ describe("admin-console-009 — upload success shows success toast and refreshes
       )
     })
 
-    // List refreshed — listDocuments called a second time after upload (req 009)
-    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(2)
+    // List refreshed — listDocuments called a third time after upload (req 009).
+    // (baseline is 2: empty-token initial load + stored-token initial load)
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -447,7 +453,9 @@ describe("admin-console-010 — upload failure shows error toast; list not clear
 
     render(<AdminConsole />)
 
-    // Wait for initial list load so existingDocs are rendered
+    // Wait for initial list loads (both empty-token + stored-token) to settle
+    // so existingDocs are rendered. The hydration fix adds an extra initial load
+    // with the empty token before the mount effect upgrades it. req: 010.
     await waitFor(() =>
       expect(screen.getByText("existing-doc.pdf")).toBeInTheDocument()
     )
@@ -465,8 +473,10 @@ describe("admin-console-010 — upload failure shows error toast; list not clear
       expect(mockAddToast).toHaveBeenCalledWith("error", expect.any(String))
     })
 
-    // listDocuments NOT called a second time — no refresh on failure (req 010)
-    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(1)
+    // listDocuments NOT called with an extra refresh on failure (req 010).
+    // With the hydration fix, 2 initial loads fire (empty-token + stored-token).
+    // A failed upload must NOT add a third call — list is preserved, count stays at 2.
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(2)
 
     // Existing document still displayed — list preserved (req 010)
     expect(screen.getByText("existing-doc.pdf")).toBeInTheDocument()

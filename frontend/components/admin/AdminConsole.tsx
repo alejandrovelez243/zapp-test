@@ -64,10 +64,27 @@ type ConsoleSection = "documents" | "events"
  */
 export function AdminConsole() {
   // ── Token state ─────────────────────────────────────────────────────────────
-  const [token, setToken] = React.useState<string>(() => {
-    if (typeof window === "undefined") return ""
-    return sessionStorage.getItem(SESSION_KEY) ?? ""
-  })
+  // Always initialise to "" so the server render (no sessionStorage) and the
+  // client's FIRST paint both produce the gate view — eliminating the hydration
+  // mismatch that occurred when a stored token caused the client to render the
+  // console on its first paint while the server had rendered the gate.
+  // req: admin-console-001, admin-console-002, admin-console-005
+  const [token, setToken] = React.useState<string>("")
+
+  // ── Mount effect: restore token from sessionStorage after first paint ────────
+  // Runs only on the client, after the initial render, so the server HTML and
+  // the first client paint both show the gate (token == ""). The effect then
+  // upgrades the state to the stored token, which transitions to the console.
+  //
+  // The setState call is deferred via setTimeout(0) — the same pattern used in
+  // useDocuments.ts — to satisfy the react-hooks/set-state-in-effect lint rule
+  // without any observable behaviour change. req: admin-console-002, 005.
+  React.useEffect(() => {
+    const stored = sessionStorage.getItem(SESSION_KEY)
+    if (!stored) return
+    const id = setTimeout(() => setToken(stored), 0)
+    return () => clearTimeout(id)
+  }, [])
 
   // ── Auth error message ───────────────────────────────────────────────────────
   const [authError, setAuthError] = React.useState<string | null>(null)

@@ -396,16 +396,17 @@ describe("events-006 — AdminConsole includes Events tab", () => {
     seedToken()
     render(<AdminConsole />)
 
-    // Both tabs must be present
-    expect(screen.getByRole("tab", { name: /Documents/i })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: /Events/i })).toBeInTheDocument()
+    // findBy* waits for the mount effect to restore the token and render the console.
+    expect(await screen.findByRole("tab", { name: /Documents/i })).toBeInTheDocument()
+    expect(await screen.findByRole("tab", { name: /Events/i })).toBeInTheDocument()
   })
 
-  it("Documents tab is selected by default", () => {
+  it("Documents tab is selected by default", async () => {
     seedToken()
     render(<AdminConsole />)
 
-    const docTab = screen.getByRole("tab", { name: /Documents/i })
+    // findBy* waits for the mount effect to restore the token and render the console.
+    const docTab = await screen.findByRole("tab", { name: /Documents/i })
     expect(docTab).toHaveAttribute("aria-selected", "true")
 
     const eventsTab = screen.getByRole("tab", { name: /Events/i })
@@ -417,7 +418,8 @@ describe("events-006 — AdminConsole includes Events tab", () => {
     const user = userEvent.setup()
     render(<AdminConsole />)
 
-    const eventsTab = screen.getByRole("tab", { name: /Events/i })
+    // findBy* waits for the mount effect to restore the token and render the console.
+    const eventsTab = await screen.findByRole("tab", { name: /Events/i })
     await user.click(eventsTab)
 
     // Create event form heading

@@ -642,21 +642,22 @@ describe("admin-console-019 — keyboard operable controls with roles and access
     seedToken()
     render(<AdminConsole />)
 
-    // The dropzone is a <div role="button" tabIndex={0}> — keyboard-activatable
-    const dropzone = screen.getByRole("button", {
+    // The dropzone is a <div role="button" tabIndex={0}> — keyboard-activatable.
+    // findBy* waits for the mount effect to restore the token and render the console.
+    const dropzone = await screen.findByRole("button", {
       name: /upload a document/i,
     })
     expect(dropzone).toBeInTheDocument()
     expect(dropzone).toHaveAttribute("tabindex", "0")
   })
 
-  it("Sign-out control is a button with identifiable English label", () => {
+  it("Sign-out control is a button with identifiable English label", async () => {
     // eval: admin-console-019
     seedToken()
     render(<AdminConsole />)
 
-    const signOutBtn = screen.getByRole("button", { name: /sign out/i })
-    expect(signOutBtn).toBeInTheDocument()
+    // findBy* waits for the mount effect to restore the token and render the console.
+    expect(await screen.findByRole("button", { name: /sign out/i })).toBeInTheDocument()
   })
 
   it("DeleteConfirm dialog buttons are keyboard-accessible (standard button roles)", () => {
@@ -955,23 +956,24 @@ describe("admin-console-022 — console copy is in English", () => {
     expect(screen.getByRole("button", { name: /^delete$/i })).toBeInTheDocument()
   })
 
-  it("UploadDropzone prompt copy is English", () => {
+  it("UploadDropzone prompt copy is English", async () => {
     // eval: admin-console-022
     seedToken()
     render(<AdminConsole />)
 
-    // The dropzone's idle prompt uses English copy
-    expect(screen.getByText(/Drag a document here/i)).toBeInTheDocument()
+    // findBy* waits for the mount effect to restore the token and render the console.
+    expect(await screen.findByText(/Drag a document here/i)).toBeInTheDocument()
     expect(
-      screen.getByRole("button", { name: /upload a document/i }),
+      await screen.findByRole("button", { name: /upload a document/i }),
     ).toBeInTheDocument()
   })
 
-  it("Sign-out control label is English", () => {
+  it("Sign-out control label is English", async () => {
     // eval: admin-console-022
     seedToken()
     render(<AdminConsole />)
 
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument()
+    // findBy* waits for the mount effect to restore the token and render the console.
+    expect(await screen.findByRole("button", { name: /sign out/i })).toBeInTheDocument()
   })
 })
