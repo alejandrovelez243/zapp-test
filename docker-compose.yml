@@ -97,6 +97,15 @@ services:
       - backend
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8000
+    # `pnpm dev` is a HOT-RELOAD dev server, so the source must be live-mounted from the
+    # host — otherwise it runs the code baked into the image at build time and host edits
+    # never appear (you'd have to rebuild for every change). The anonymous volumes keep
+    # the image-installed node_modules and the container's own .next build cache, so the
+    # host bind-mount of ./frontend does not shadow them.
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     ports:
       - "3000:3000"
     command: pnpm dev
