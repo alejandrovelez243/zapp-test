@@ -39,8 +39,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import type { DocumentSummary } from "@/lib/adminApi"
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface DeleteConfirmProps {
@@ -51,11 +49,12 @@ export interface DeleteConfirmProps {
   open: boolean
 
   /**
-   * The document to be deleted. When null the dialog renders nothing visible
-   * (guarded below). Keeps the parent's state shape simple — it can set doc
-   * first, then open=true, with no timing issue.
+   * The item to be deleted. When null the dialog renders nothing visible
+   * (guarded below). Requires only a `name` field so the dialog can be reused
+   * for both documents (DocumentSummary.name) and events (EventSummary.title
+   * passed as { name: event.title }). Keeps the parent's state shape simple.
    */
-  doc: DocumentSummary | null
+  doc: { name: string } | null
 
   /**
    * Called when the admin clicks the Delete button.

@@ -25,7 +25,7 @@ Prereqs (dep, config, models/migration) precede consumers. Drive via `/implement
 
 - [x] 7. Implement `app/api/events.py` — `POST /events` (admin) create; `GET /events` (admin) list id/title/start/end; `DELETE /events/{id}` (admin) delete + cascade; `GET /events/{id}/enrollments` (admin) names + timestamps; `GET /events/{id}/ics` (anonymous) the event `.ics`; missing/invalid admin token on gated routes → 401/403 + no mutation/disclosure. Register the router in `app/main.py`. — _req: events-001, events-002, events-003, events-004, events-005, events-010 — owner: backend-engineer_
 
-- [ ] 8. Add the admin frontend events section (extend `frontend/app/admin`, reuse the documents-UI pattern + `X-Admin-Token`): create-event form, event list with delete, and a per-event registrants view (`GET /events/{id}/enrollments`). — _req: events-006 — owner: frontend-engineer_
+- [x] 8. Add the admin frontend events section (extend `frontend/app/admin`, reuse the documents-UI pattern + `X-Admin-Token`): create-event form, event list with delete, and a per-event registrants view (`GET /events/{id}/enrollments`). — _req: events-006 — owner: frontend-engineer_
 
 - [x] 9. Add tests: models + migration 0007/0008 (offline SQL, cascade); `build_ics` (valid RFC-5545, tz localization, active_lang text); events agent (TestModel + mocked DB: list_events, confirm-then-enroll persists, non-existent event → no write, reply in active_lang); `ask_events` forwards deps/usage + `events_enabled` off → tool absent + degrade on error; endpoints (admin auth reject, create/list/delete, enrollments view, `.ics` download); sub-agent memory two-turn. — _req: events-001..events-018 — owner: backend-engineer_
 

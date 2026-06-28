@@ -23,6 +23,8 @@ const mockAddToast = vi.hoisted(() => vi.fn())
 // ── Module mocks (hoisted before all imports) ─────────────────────────────────
 
 // Keep isAdminApiError and type shapes from the real module; replace I/O fns.
+// Events functions are also mocked so AdminConsole's useEvents hook doesn't
+// attempt real fetches when tests render the console. req: events-006.
 vi.mock("@/lib/adminApi", async (importActual) => {
   const mod = await importActual<typeof import("@/lib/adminApi")>()
   return {
@@ -31,6 +33,10 @@ vi.mock("@/lib/adminApi", async (importActual) => {
     uploadDocument: vi.fn(),
     deleteDocument: vi.fn(),
     replaceDocument: vi.fn(),
+    listEvents: vi.fn(),
+    createEvent: vi.fn(),
+    deleteEvent: vi.fn(),
+    listEnrollments: vi.fn(),
   }
 })
 
@@ -43,7 +49,7 @@ vi.mock("@/components/admin/Toaster", () => ({
 
 // ── Imports ────────────────────────────────────────────────────────────────────
 
-import { listDocuments, uploadDocument } from "@/lib/adminApi"
+import { listDocuments, uploadDocument, listEvents } from "@/lib/adminApi"
 import type { AdminApiError, DocumentSummary } from "@/lib/adminApi"
 
 import { AdminConsole } from "@/components/admin/AdminConsole"
@@ -81,6 +87,9 @@ beforeEach(() => {
   // Safe defaults — callers override per-test as needed
   vi.mocked(listDocuments).mockResolvedValue([])
   vi.mocked(uploadDocument).mockResolvedValue({ id: 99 })
+  // Events hook is also active in AdminConsole; default to empty list
+  // so tests that render AdminConsole don't attempt real fetches. req events-006.
+  vi.mocked(listEvents).mockResolvedValue([])
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

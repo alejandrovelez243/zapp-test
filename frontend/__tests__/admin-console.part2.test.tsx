@@ -40,9 +40,15 @@ vi.mock("@/lib/adminApi", () => ({
   uploadDocument: vi.fn(),
   replaceDocument: vi.fn(),
   deleteDocument: vi.fn(),
+  // Events functions — also mocked so AdminConsole's useEvents hook does not
+  // attempt real fetches when tests render the console. req: events-006.
+  listEvents: vi.fn(),
+  createEvent: vi.fn(),
+  deleteEvent: vi.fn(),
+  listEnrollments: vi.fn(),
   /**
-   * isAdminApiError: mirrors the real implementation so useDocuments can
-   * distinguish success from error returns without importing the real module.
+   * isAdminApiError: mirrors the real implementation so useDocuments / useEvents
+   * can distinguish success from error returns without importing the real module.
    */
   isAdminApiError: (x: unknown): boolean =>
     typeof x === "object" &&
@@ -57,6 +63,7 @@ import {
   listDocuments,
   replaceDocument,
   deleteDocument,
+  listEvents,
 } from "@/lib/adminApi"
 import type { DocumentSummary } from "@/lib/adminApi"
 
@@ -86,6 +93,9 @@ beforeEach(() => {
   vi.mocked(listDocuments).mockResolvedValue([])
   vi.mocked(replaceDocument).mockResolvedValue({ id: 100 })
   vi.mocked(deleteDocument).mockResolvedValue(true)
+  // Events hook is also active in AdminConsole; default to empty list so
+  // existing document tests don't fail on missing events mock. req events-006.
+  vi.mocked(listEvents).mockResolvedValue([])
 })
 
 afterEach(() => {

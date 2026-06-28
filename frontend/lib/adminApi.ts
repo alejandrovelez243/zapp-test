@@ -59,9 +59,9 @@ export interface AdminApiError {
   message: string;
 }
 
-/** Narrows a result to AdminApiError. */
+/** Narrows a result to AdminApiError. Accepts unknown so it works for all API return types. */
 export function isAdminApiError(
-  x: DocumentSummary[] | DocumentCreated | true | AdminApiError
+  x: unknown
 ): x is AdminApiError {
   return typeof x === "object" && x !== null && "ok" in x && (x as AdminApiError).ok === false;
 }
@@ -237,6 +237,48 @@ export async function deleteDocument(
 }
 
 // ---------------------------------------------------------------------------
+// Events types
+// ---------------------------------------------------------------------------
+
+/**
+ * One row from GET /events (admin list).
+ * req: events-003, events-006
+ */
+export interface EventSummary {
+  id: number;
+  title: string;
+  start_at: string; // ISO 8601 datetime (naive-UTC from the backend)
+  end_at: string;   // ISO 8601 datetime
+}
+
+/**
+ * Payload for POST /events (create).
+ * req: events-001, events-006
+ */
+export interface EventCreatePayload {
+  title: string;
+  description: string;
+  start_at: string;  // ISO 8601 datetime
+  end_at: string;    // ISO 8601 datetime
+  location: string;
+  timezone: string;  // IANA timezone string
+}
+
+/** Returned by POST /events on success (201). */
+export interface EventCreated {
+  id: number;
+}
+
+/**
+ * One registrant row from GET /events/{id}/enrollments.
+ * req: events-005, events-006
+ */
+export interface Enrollment {
+  name: string;
+  created_at: string; // ISO 8601 datetime
+}
+
+// ---------------------------------------------------------------------------
 // PUT /documents/{id} — replace document (re-ingest and atomic swap)
 // ---------------------------------------------------------------------------
 
@@ -290,6 +332,178 @@ export async function replaceDocument(
       kind: "malformed",
       status: response.status,
       message: "Replace response did not include a document id",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /events — list all events (admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the admin event list.
+ * Returns the array on success or an AdminApiError on any failure.
+ *
+ * req: events-003, events-006
+ */
+export async function listEvents(
+  token: string
+): Promise<EventSummary[] | AdminApiError> {
+  const res = await safeFetch("/api/events", {
+    headers: authHeaders(token),
+  });
+
+  if ("ok" in res && res.ok === false) return res as AdminApiError;
+
+  const response = res as Response;
+  if (!response.ok) {
+    return {
+      ok: false,
+      kind: httpErrorKind(response.status),
+      status: response.status,
+      message: `GET /events returned ${response.status}`,
+    };
+  }
+
+  try {
+    const body: unknown = await response.json();
+    if (!Array.isArray(body)) throw new Error("not an array");
+    return body as EventSummary[];
+  } catch {
+    return {
+      ok: false,
+      kind: "malformed",
+      status: response.status,
+      message: "Response body is not a valid event list",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /events — create a new event (admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new event.  Returns {id} on 201/200 or an AdminApiError.
+ *
+ * req: events-001, events-006
+ */
+export async function createEvent(
+  token: string,
+  payload: EventCreatePayload
+): Promise<EventCreated | AdminApiError> {
+  const res = await safeFetch("/api/events", {
+    method: "POST",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if ("ok" in res && res.ok === false) return res as AdminApiError;
+
+  const response = res as Response;
+  if (!response.ok) {
+    let detail = `POST /events returned ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // ignore parse failure
+    }
+    return {
+      ok: false,
+      kind: httpErrorKind(response.status),
+      status: response.status,
+      message: detail,
+    };
+  }
+
+  try {
+    const body = (await response.json()) as { id?: number };
+    if (typeof body.id !== "number") throw new Error("missing id");
+    return { id: body.id };
+  } catch {
+    return {
+      ok: false,
+      kind: "malformed",
+      status: response.status,
+      message: "Create-event response did not include an event id",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /events/{id} — remove event and its enrollments (admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete an event by id (cascades enrollments).
+ * Returns `true` on 204 or an AdminApiError.
+ *
+ * req: events-004, events-006
+ */
+export async function deleteEvent(
+  token: string,
+  id: number
+): Promise<true | AdminApiError> {
+  const res = await safeFetch(`/api/events/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+
+  if ("ok" in res && res.ok === false) return res as AdminApiError;
+
+  const response = res as Response;
+  if (response.status === 204) return true;
+  if (response.ok) return true;
+
+  return {
+    ok: false,
+    kind: httpErrorKind(response.status),
+    status: response.status,
+    message: `DELETE /events/${id} returned ${response.status}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET /events/{id}/enrollments — per-event registrants (admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the registrant list for a specific event.
+ * Returns Enrollment[] on success or an AdminApiError.
+ *
+ * req: events-005, events-006
+ */
+export async function listEnrollments(
+  token: string,
+  id: number
+): Promise<Enrollment[] | AdminApiError> {
+  const res = await safeFetch(`/api/events/${id}/enrollments`, {
+    headers: authHeaders(token),
+  });
+
+  if ("ok" in res && res.ok === false) return res as AdminApiError;
+
+  const response = res as Response;
+  if (!response.ok) {
+    return {
+      ok: false,
+      kind: httpErrorKind(response.status),
+      status: response.status,
+      message: `GET /events/${id}/enrollments returned ${response.status}`,
+    };
+  }
+
+  try {
+    const body: unknown = await response.json();
+    if (!Array.isArray(body)) throw new Error("not an array");
+    return body as Enrollment[];
+  } catch {
+    return {
+      ok: false,
+      kind: "malformed",
+      status: response.status,
+      message: "Response body is not a valid enrollment list",
     };
   }
 }
