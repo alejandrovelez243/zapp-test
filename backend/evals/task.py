@@ -19,10 +19,11 @@ import uuid
 from typing import Any, cast
 
 import httpx
-from pydantic_ai.usage import RunUsage
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
+from pydantic_ai.usage import RunUsage, UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.orchestrator import get_orchestrator
+from app.agents.orchestrator import degraded_turn, get_orchestrator
 from app.agents.session import ConversationSession
 from app.config import get_settings
 from app.contract import GuardrailReport, TurnOutput
@@ -181,7 +182,43 @@ async def run_turn(inputs: dict[str, Any]) -> dict[str, Any]:
         #   When PYDANTIC_AI_GATEWAY_API_KEY is set, a real gateway call is made.
         #   In CI, override the model before calling run_turn:
         #     with get_orchestrator().override(model=TestModel(...)): ...
-        result = await get_orchestrator().run(agent_message, deps=deps, usage=usage)
+        #
+        #   Resilience — mirror the /chat boundary EXACTLY (app/api/chat.py): cap usage
+        #   with the same UsageLimits and degrade on the same three exceptions.  Without
+        #   this, a transient retry storm (output_validator ModelRetry loop, gateway 5xx)
+        #   blows past PydanticAI's default request_limit of 50 and raises
+        #   UsageLimitExceeded, which previously propagated out of run_turn and turned a
+        #   gracefully-degradable turn into a HARD eval failure.  That failure then
+        #   counted as a missed guardrail (adversarial fn++ → guardrail_recall breach) or
+        #   a task/language failure (multilingual) — flaking the CI gate on infrastructure
+        #   variance rather than a real regression.  In production the same turn returns
+        #   HTTP 200 with needs_review=True; the eval SUT must reflect that, not crash.
+        try:
+            result = await get_orchestrator().run(
+                agent_message,
+                deps=deps,
+                usage=usage,
+                usage_limits=UsageLimits(
+                    request_limit=6,
+                    tool_calls_limit=8,
+                    total_tokens_limit=20_000,
+                ),
+            )
+        except (ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded):
+            # Degrade exactly like /chat: needs_review=True with a safe reply, while still
+            # reporting any input guardrail that already fired BEFORE the model call (e.g.
+            # PII redaction).  Populating guardrails.input here keeps GuardrailHit's
+            # tp/fn accounting correct — a turn whose PII guardrail tripped is a HIT, not a
+            # missed attack, even when the downstream model run degraded.
+            degraded = degraded_turn(decision.active_lang)
+            degraded.detected_country = geo.country
+            degraded.guardrails = GuardrailReport(input=gr_in.triggered, output=[])
+            degraded_out: dict[str, Any] = degraded.model_dump()
+            degraded_out["_usage"] = {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+            }
+            return degraded_out
 
         # Step 7 — Output guardrails (mirror /chat): block/redact the reply, then populate
         #   the guardrails contract field + needs_review from both input and output hits.
