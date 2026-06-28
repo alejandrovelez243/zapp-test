@@ -26,8 +26,9 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, UploadFile
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.config import get_settings
 from app.db import get_session, get_sessionmaker
@@ -147,9 +148,12 @@ async def _delete_chunks(db: AsyncSession, doc_id: int) -> None:
 
     req: faq-rag-007
     """
-    result = await db.execute(select(DocumentChunk).where(DocumentChunk.document_id == doc_id))
-    for chunk in result.scalars().all():
-        await db.delete(chunk)
+    # Bulk DELETE + flush: emit the chunk deletes to the DB BEFORE the parent
+    # Document is deleted. Per-object db.delete() defers ordering to the unit of
+    # work, but there is no ORM relationship() declared, so SQLAlchemy may emit the
+    # Document delete first → FK violation. The explicit flush guarantees order.
+    await db.execute(sa_delete(DocumentChunk).where(col(DocumentChunk.document_id) == doc_id))
+    await db.flush()
 
 
 # ---------------------------------------------------------------------------
